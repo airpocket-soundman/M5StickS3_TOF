@@ -169,6 +169,8 @@ bool gSpeakerReady = false;
 volatile float gDisplacementMm = 0.0f;  // latest sensor reading (sample-hold)
 volatile int16_t gAudioPeak = 0;
 volatile bool gGate = false;
+// Local speaker monitor (BtnB toggles; the Tab5 is the primary output).
+volatile bool gLocalSpeakerOn = false;
 volatile bool gWifiOk = false;
 TaskHandle_t gAudioTask = nullptr;
 
@@ -1105,8 +1107,9 @@ void audioTask(void*) {
     }
     gAudioPeak = peak;
     gGate = any_gate;
-    // Local monitor on the built-in speaker (mixed).
-    if (gSpeakerReady && M5.Speaker.isPlaying(0) < 2) {
+    // Local monitor on the built-in speaker (mixed). Off by default — the
+    // Tab5 is the real instrument output; BtnB toggles this monitor.
+    if (gLocalSpeakerOn && gSpeakerReady && M5.Speaker.isPlaying(0) < 2) {
       M5.Speaker.playRaw(chunk, kAudioChunkFrames, kAudioSampleRate, false, 1, 0, false);
     }
     // 256 frames @16kHz = 16ms cadence; receiver ring absorbs jitter.
@@ -1298,7 +1301,7 @@ void updateDisplay() {
                static_cast<unsigned long>(gGrainsDropped));
     gfx.printf("wifi:%s gate:%s peak:%d\n", gWifiOk ? "OK" : "--", gGate ? "ON" : "off",
                static_cast<int>(gAudioPeak));
-  gfx.println("BtnA: re-detect");
+  gfx.printf("BtnA: re-detect  BtnB: spk %s\n", gLocalSpeakerOn ? "ON" : "off");
 
   // Status lamps: red = capture window in progress, green = grain playing.
   if (gPendingOnsetCount > 0) {
@@ -1627,6 +1630,10 @@ void loop() {
 
   if (M5.BtnA.wasPressed()) {
     gReprobeRequest = true;
+  }
+  if (M5.BtnB.wasPressed()) {
+    gLocalSpeakerOn = !gLocalSpeakerOn;
+    Serial.printf("[CMD] local speaker %s\n", gLocalSpeakerOn ? "on" : "off");
   }
 
   const bool wifiOk = WiFi.status() == WL_CONNECTED;
