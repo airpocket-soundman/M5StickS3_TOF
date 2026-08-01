@@ -154,6 +154,9 @@ size_t gHistoryHead = 0;
 size_t gHistoryCount = 0;
 uint32_t gDisplayDirtySamples = 0;
 bool gCanvasReady = false;
+// Graph baseline: learned once from the first settled seconds, then locked.
+float gGraphBaselineMm = 0.0f;
+bool gGraphBaselineSet = false;
 
 WiFiUDP gUdp;
 uint32_t gUdpSequence = 0;
@@ -180,6 +183,10 @@ uint64_t gLastOnsetSample = 0;
 uint32_t gOnsetHoldCount = 0;
 float gOnsetRefEnv = 0.0f;
 volatile uint32_t gLastInvalidUs = 0;
+// Start of the current continuous-invalid streak (0 = currently valid).
+uint32_t gInvalidStreakStartUs = 0;
+// Invalid must persist this long before it disarms onset detection.
+constexpr uint32_t kInvalidStreakArmUs = 250000;
 // Median-of-3 filter for VL6180X outlier spikes.
 float gMedianBuf[3] = {0.0f, 0.0f, 0.0f};
 size_t gMedianIndex = 0;
@@ -219,11 +226,12 @@ volatile float gPlaybackSpeed = 0.2f;
 // Amplitude->pitch mapping (mode B): ripples of kPitchCenterMm play at
 // Steep mapping (~1 octave per halving of wave height): real droplets only
 // span ~70-180mm, so a gentle slope sounds monotone. Center sits at the
-// biggest observed splashes; smaller ripples climb fast.
-// 200mm->0, 140mm->+6, 100mm->+12, 70mm->+18, <=50mm->+24 (clamp).
+// biggest observed splashes; smaller ripples climb fast. The whole scale is
+// raised one octave: 200mm->+12, 100mm->+24, <=50mm->+36 (clamp).
 constexpr float kPitchCenterMm = 200.0f;
 constexpr float kPitchSemisPer3x = 19.0f;
-constexpr float kPitchClampSemis = 24.0f;
+constexpr float kPitchBaseSemis = 12.0f;
+constexpr float kPitchTopSemis = 36.0f;
 TxVoice gTxVoices[kTxVoices] = {};
 uint8_t gNextVoiceId = 1;
 // Peak (ring units) per queued grain, for the amplitude->pitch mapping.
@@ -894,10 +902,10 @@ float grainSampleCubic(const int16_t* d, float x) {
 size_t renderGrain(const int16_t* grain, float peak_units, int16_t* out_buf, float* semis_out) {
   const float speed = gPlaybackSpeed;
   const float peak_mm = std::max(1.0f, peak_units / kRingScale);
-  float semis = -kPitchSemisPer3x * (logf(peak_mm / kPitchCenterMm) / logf(3.0f));
-  // Upward-only: droplets at/above the center play the original pitch,
-  // smaller ones shift up (never below the base note).
-  semis = std::max(0.0f, std::min(kPitchClampSemis, semis));
+  float semis = kPitchBaseSemis - kPitchSemisPer3x * (logf(peak_mm / kPitchCenterMm) / logf(3.0f));
+  // Upward-only: droplets at/above the center play the base note, smaller
+  // ones shift up (never below the base).
+  semis = std::max(kPitchBaseSemis, std::min(kPitchTopSemis, semis));
   *semis_out = semis;
   const float pitch = powf(2.0f, semis / 12.0f);
   const float alpha = speed * pitch;
@@ -920,8 +928,13 @@ size_t renderGrain(const int16_t* grain, float peak_units, int16_t* out_buf, flo
     for (size_t i = 0; i < out_len; ++i) gPvOut[i] = gPvRes[i];
   } else {
     const float beta = pitch;
-    const int hs = std::max(1, static_cast<int>(lroundf(kPvHop * beta)));
-    const int frames = std::max(1, static_cast<int>((res_len + kPvHop - 1) / kPvHop));
+    // Variable analysis hop: for large upward shifts a fixed 256 analysis
+    // hop would need a synthesis hop beyond the frame length (no window
+    // overlap -> gaps). Shrink the analysis hop instead so the synthesis
+    // hop stays ~kPvHop and windows always overlap.
+    const int ha = std::max(16, static_cast<int>(lroundf(static_cast<float>(kPvHop) / beta)));
+    const int hs = std::max(1, static_cast<int>(lroundf(ha * beta)));
+    const int frames = std::max(1, static_cast<int>((res_len + ha - 1) / static_cast<size_t>(ha)));
     size_t full_len = static_cast<size_t>(frames - 1) * hs + kPvFrame;
     if (full_len > kPvMaxLen) full_len = kPvMaxLen;
     out_len = std::min(full_len, target_len);
@@ -935,7 +948,7 @@ size_t renderGrain(const int16_t* grain, float peak_units, int16_t* out_buf, flo
     for (size_t i = 0; i < full_len; ++i) { gPvOut[i] = 0.0f; gPvNorm[i] = 0.0f; }
     for (int k = 0; k <= kPvFrame / 2; ++k) { last_ph[k] = 0.0f; sum_ph[k] = 0.0f; }
     for (int f = 0; f < frames; ++f) {
-      const size_t in_pos = static_cast<size_t>(f) * kPvHop;
+      const size_t in_pos = static_cast<size_t>(f) * static_cast<size_t>(ha);
       const size_t out_pos = static_cast<size_t>(f) * hs;
       for (int i = 0; i < kPvFrame; ++i) {
         const float v = (in_pos + i < res_len) ? gPvRes[in_pos + i] : 0.0f;
@@ -946,10 +959,10 @@ size_t renderGrain(const int16_t* grain, float peak_units, int16_t* out_buf, flo
       for (int k = 0; k <= kPvFrame / 2; ++k) {
         const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
         const float ph = atan2f(im[k], re[k]);
-        const float expect = 2.0f * 3.14159265f * kPvHop * k / kPvFrame;
+        const float expect = 2.0f * 3.14159265f * ha * k / kPvFrame;
         float d = ph - last_ph[k] - expect;
         d -= 2.0f * 3.14159265f * lroundf(d / (2.0f * 3.14159265f));
-        const float true_w = 2.0f * 3.14159265f * k / kPvFrame + d / kPvHop;
+        const float true_w = 2.0f * 3.14159265f * k / kPvFrame + d / ha;
         last_ph[k] = ph;
         sum_ph[k] = (f == 0) ? ph : sum_ph[k] + hs * true_w;
         re[k] = mag * cosf(sum_ph[k]);
@@ -1125,8 +1138,21 @@ void updateDisplacementFromSample(const Sample& sample) {
     }
   }
   else {
-    gLastInvalidUs = micros();
+    // Track how long the sensor has been continuously invalid. Big splashes
+    // tilt the surface and blank the reflection for tens of ms at a time —
+    // exactly when a droplet must be detected — so short dropouts must NOT
+    // disarm the onset detector. Only a sustained loss (hand in the beam,
+    // surface out of range) triggers the phantom-step blanking.
+    const uint32_t now_us = micros();
+    if (gInvalidStreakStartUs == 0) {
+      gInvalidStreakStartUs = now_us;
+    }
+    if (now_us - gInvalidStreakStartUs > kInvalidStreakArmUs) {
+      gLastInvalidUs = now_us;
+    }
+    return;
   }
+  gInvalidStreakStartUs = 0;
   // Invalid readings hold the previous level; the recorder's high-pass
   // keeps the held value from becoming an audible step.
 }
@@ -1186,23 +1212,30 @@ void drawGraphPanel(T& gfx, int32_t x, int32_t y, int32_t w, int32_t h) {
     return;
   }
 
-  float minValue = 1.0e9f;
-  float maxValue = -1.0e9f;
+  // Fixed amplitude scale (500mm total span) so wave heights are visually
+  // comparable between droplets. The baseline (resting water level) is
+  // averaged once, from the first full history screen after startup, then
+  // locked — a mean that tracked the visible peaks would drag the whole
+  // trace down during activity. BtnA re-detect re-learns it.
+  constexpr float kGraphSpanMm = 500.0f;
+  float sum = 0.0f;
+  size_t valid_count = 0;
   for (size_t i = 0; i < gHistoryCount; ++i) {
     const Sample& sample = gHistory[(gHistoryHead + i) % kHistorySize];
     if (!sample.valid) {
       continue;
     }
-    minValue = std::min(minValue, sample.distanceMm);
-    maxValue = std::max(maxValue, sample.distanceMm);
+    sum += sample.distanceMm;
+    ++valid_count;
   }
-
-  if (minValue > maxValue) {
-    minValue = 0.0f;
-    maxValue = 1.0f;
-  } else if (maxValue - minValue < 0.1f) {
-    maxValue = minValue + 0.1f;
+  const float mean = valid_count > 0 ? sum / static_cast<float>(valid_count) : 0.0f;
+  if (!gGraphBaselineSet && gHistoryCount >= kHistorySize && valid_count > kHistorySize / 2) {
+    gGraphBaselineMm = mean;  // ~2s of settled readings
+    gGraphBaselineSet = true;
   }
+  const float baseline = gGraphBaselineSet ? gGraphBaselineMm : mean;
+  const float minValue = baseline - kGraphSpanMm / 3.0f;
+  const float maxValue = baseline + kGraphSpanMm * 2.0f / 3.0f;
 
   const int32_t innerX = x + 1;
   const int32_t innerY = y + 1;
@@ -1219,10 +1252,12 @@ void drawGraphPanel(T& gfx, int32_t x, int32_t y, int32_t w, int32_t h) {
     const float range = maxValue - minValue;
     const int32_t x0 = innerX + static_cast<int32_t>(((i - 1) * (innerW - 1)) / max<size_t>(1, gHistoryCount - 1));
     const int32_t x1 = innerX + static_cast<int32_t>((i * (innerW - 1)) / max<size_t>(1, gHistoryCount - 1));
+    const float v0 = std::clamp(prev.distanceMm, minValue, maxValue);
+    const float v1 = std::clamp(curr.distanceMm, minValue, maxValue);
     const int32_t y0 = innerY + innerH - 1
-                     - static_cast<int32_t>(((prev.distanceMm - minValue) * static_cast<float>(innerH - 1)) / range);
+                     - static_cast<int32_t>(((v0 - minValue) * static_cast<float>(innerH - 1)) / range);
     const int32_t y1 = innerY + innerH - 1
-                     - static_cast<int32_t>(((curr.distanceMm - minValue) * static_cast<float>(innerH - 1)) / range);
+                     - static_cast<int32_t>(((v1 - minValue) * static_cast<float>(innerH - 1)) / range);
     gfx.drawLine(x0, y0, x1, y1, kColorDistance);
   }
 
@@ -1307,6 +1342,17 @@ void printStatus() {
   Serial.print(static_cast<int>(gAudioPeak));
   Serial.print(" env=");
   Serial.print(gEnvFastView, 2);
+  // Onset-gate diagnostics: which condition is blocking when peaks are
+  // visible but no onset fires.
+  {
+    const float fire_level = std::max(static_cast<float>(gOnsetThresholdMm), gOnsetRefEnv * kOnsetRefFactor);
+    const uint32_t since_invalid_ms = (micros() - gLastInvalidUs) / 1000;
+    const bool armed = gRecordTotal >= kRecordRateHz * 2 && (micros() - gLastInvalidUs) > kValidBlankUs;
+    Serial.printf(" slow=%.2f ref=%.2f fire=%.2f armed=%d sinceInv=%lu pend=%u",
+                  static_cast<double>(gEnvSlow), static_cast<double>(gOnsetRefEnv),
+                  static_cast<double>(fire_level), armed ? 1 : 0,
+                  static_cast<unsigned long>(since_invalid_ms), static_cast<unsigned>(gPendingOnsetCount));
+  }
   Serial.print(" onsets=");
   Serial.print(gOnsetCount);
   Serial.print(" grains=");
@@ -1430,6 +1476,7 @@ void reprobeSensor() {
   gHistoryHead = 0;
   gHistoryCount = 0;
   gDisplayDirtySamples = 0;
+  gGraphBaselineSet = false;  // re-learn the water level for the new setup
   gSampleRateWindowStartMs = millis();
   gSampleCountInWindow = 0;
   gSampleRateHz = 0.0f;
@@ -1484,6 +1531,10 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.setTextSize(1);
   gCanvas.setColorDepth(16);
+  // Keep the frame canvas in internal SRAM: with BOARD_HAS_PSRAM the sprite
+  // would land in octal PSRAM, and pushSprite DMA from PSRAM stalls
+  // intermittently (graph appears frozen while everything else runs).
+  gCanvas.setPsram(false);
   gCanvasReady = gCanvas.createSprite(M5.Display.width(), M5.Display.height()) != nullptr;
   if (gCanvasReady) {
     gCanvas.setTextSize(1);
@@ -1530,9 +1581,35 @@ void setup() {
   xTaskCreate(audioTask, "audio_tx", 4096, nullptr, 3, &gAudioTask);
   xTaskCreate(sensorTask, "sensor_poll", 4096, nullptr, 4, &gSensorTask);
   xTaskCreate(grainWorkerTask, "grain_worker", 8192, nullptr, 2, nullptr);
+  // Reconnect watchdog in its own low-priority task: WiFi.begin() blocks for
+  // seconds, which frozen the display when it ran inside loop().
+  xTaskCreate(
+      [](void*) {
+        uint32_t last_attempt_ms = 0;
+        for (;;) {
+          if (WiFi.status() != WL_CONNECTED && millis() - last_attempt_ms > 8000) {
+            last_attempt_ms = millis();
+            Serial.println("[WIFI] retrying connection...");
+            WiFi.disconnect();
+            WiFi.begin(kApSsid, kApPassword);
+          }
+          vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+      },
+      "wifi_watchdog", 4096, nullptr, 1, nullptr);
 }
 
 void loop() {
+  // Diagnose display-freeze reports: log whenever a loop pass took
+  // unexpectedly long (the graph redraw runs here, so a stalled loop is a
+  // frozen graph). Prints what likely blocked via the surrounding logs.
+  static uint32_t last_loop_ms = 0;
+  const uint32_t now_ms = millis();
+  if (last_loop_ms != 0 && now_ms - last_loop_ms > 300) {
+    Serial.printf("[LOOPGAP] %lums\n", static_cast<unsigned long>(now_ms - last_loop_ms));
+  }
+  last_loop_ms = now_ms;
+
   M5.update();
   processSerialCommands();
 
@@ -1558,17 +1635,6 @@ void loop() {
     Serial.printf("[WIFI] %s ip=%s\n", wifiOk ? "connected" : "disconnected",
                   wifiOk ? WiFi.localIP().toString().c_str() : "-");
   }
-  // Reconnect watchdog: setAutoReconnect alone gives up when the AP is down
-  // for a while (e.g. the Tab5 rebooted); kick a fresh association attempt
-  // every 8s until the link returns.
-  static uint32_t last_reconnect_ms = 0;
-  if (!wifiOk && millis() - last_reconnect_ms > 8000) {
-    last_reconnect_ms = millis();
-    Serial.println("[WIFI] retrying connection...");
-    WiFi.disconnect();
-    WiFi.begin(kApSsid, kApPassword);
-  }
-
   printStatus();
   updateDisplay();
 }
