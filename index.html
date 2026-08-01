@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>波紋シンセ — 聞こえない波を、音として聴く</title>
+<meta name="description" content="水面の波紋をToFセンサで観測し、ピッチ変換して音として楽しむ楽器。電波望遠鏡が不可視の宇宙を可視化するように、可聴域外の「波」を耳に届けます。">
+<style>
+:root {
+  --bg: #060913;
+  --bg2: #0b1226;
+  --ink: #dce6f2;
+  --muted: #8fa3bd;
+  --accent: #4cc9f0;
+  --accent2: #80ed99;
+  --gold: #ffd166;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+  line-height: 1.9;
+}
+.hero {
+  position: relative;
+  min-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 48px 24px;
+  background: radial-gradient(ellipse at 50% -20%, #1b2a55 0%, var(--bg) 60%);
+  overflow: hidden;
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 6vw, 4rem);
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  background: linear-gradient(120deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 18px;
+}
+.hero p.tag {
+  font-size: clamp(1rem, 2.4vw, 1.35rem);
+  color: var(--muted);
+  max-width: 640px;
+}
+.hero .ripple-svg { width: min(680px, 92vw); margin-top: 40px; }
+section {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 72px 24px;
+}
+section h2 {
+  font-size: clamp(1.5rem, 3.6vw, 2.1rem);
+  margin-bottom: 28px;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+section h2 span.en {
+  display: block;
+  font-size: 0.7em;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  font-weight: 400;
+}
+section p { margin-bottom: 1.2em; }
+.lead { font-size: 1.06em; }
+.astro {
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 50%, var(--bg) 100%);
+}
+figure { margin: 36px 0; text-align: center; }
+figure svg { width: 100%; height: auto; max-width: 780px; }
+figcaption { color: var(--muted); font-size: 0.85em; margin-top: 10px; }
+figure img { max-width: 100%; border-radius: 10px; border: 1px solid #1d2b52; }
+figure img.pixel { image-rendering: pixelated; width: min(480px, 92vw); }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin: 36px 0;
+}
+.card {
+  background: #0d1530;
+  border: 1px solid #1d2b52;
+  border-radius: 14px;
+  padding: 22px;
+}
+.card h3 { color: var(--accent2); font-size: 1.02em; margin-bottom: 10px; }
+.card p { font-size: 0.92em; color: var(--muted); margin: 0; }
+.card .icon { font-size: 1.8em; margin-bottom: 8px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 28px 0;
+  font-size: 0.92em;
+}
+th, td { border: 1px solid #1d2b52; padding: 10px 14px; text-align: left; }
+th { background: #0d1530; color: var(--accent); font-weight: 600; white-space: nowrap; }
+td { color: var(--ink); }
+.links a {
+  display: inline-block;
+  margin: 6px 12px 6px 0;
+  padding: 12px 22px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.95em;
+  transition: background 0.2s, color 0.2s;
+}
+.links a:hover { background: var(--accent); color: var(--bg); }
+footer {
+  text-align: center;
+  padding: 48px 24px 64px;
+  color: var(--muted);
+  font-size: 0.85em;
+  border-top: 1px solid #131d3d;
+}
+.pitchnote { color: var(--gold); }
+@media (max-width: 600px) { section { padding: 56px 18px; } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>波紋シンセ</h1>
+  <p class="tag">Ripple Synth — 聞こえない「波」を、音として聴く楽器</p>
+  <svg class="ripple-svg" viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="波紋が音符に変わるイメージ">
+    <defs>
+      <linearGradient id="wg" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#4cc9f0"/><stop offset="1" stop-color="#80ed99"/>
+      </linearGradient>
+    </defs>
+    <g stroke="url(#wg)" fill="none" stroke-width="2" opacity="0.9">
+      <ellipse cx="140" cy="150" rx="26" ry="7"/>
+      <ellipse cx="140" cy="150" rx="58" ry="15" opacity="0.7"/>
+      <ellipse cx="140" cy="150" rx="92" ry="24" opacity="0.45"/>
+      <ellipse cx="140" cy="150" rx="126" ry="33" opacity="0.25"/>
+    </g>
+    <circle cx="140" cy="70" r="5" fill="#4cc9f0">
+      <animate attributeName="cy" values="40;140;40" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="1;0.15;1" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <path d="M300 100 C 330 60, 360 140, 390 100 S 450 60, 480 100" stroke="#8fa3bd" stroke-width="2" fill="none" stroke-dasharray="4 5"/>
+    <g fill="#ffd166">
+      <text x="530" y="80" font-size="42">&#9834;</text>
+      <text x="575" y="120" font-size="30">&#9834;</text>
+      <text x="610" y="70" font-size="24">&#9834;</text>
+    </g>
+  </svg>
+</div>
+
+<section class="astro">
+  <h2>電波望遠鏡が、宇宙を「見せて」くれたように<span class="en">FROM RADIO TO VISIBLE — FROM SILENCE TO SOUND</span></h2>
+  <p class="lead">わたしたちが目にする美しい天体写真の多くは、そもそも「見えない光」でできています。電波望遠鏡が捉えるのは、可視領域からはるかに外れた電波。それ自体を人間の目で見ることはできません。しかし周波数を可視領域へと写し替え、色を割り当てることで、電波の宇宙は色鮮やかな天文画像として、わたしたちの目の前に現れます。</p>
+  <p><strong>波紋シンセは、その「音バージョン」です。</strong></p>
+  <p>自然界には、耳に聞こえない「波」があふれています。風に揺れる葉っぱの振動、水面に広がる波紋、寄せては返す海の波。これらはすべて立派な振動＝波ですが、周波数が数Hz程度と低すぎるため、決して音として聞こえることはありません。</p>
+  <p>その聞こえない波を観測し、<span class="pitchnote">ピッチ変換（周波数の写し替え）</span>によって可聴領域へ持ち上げる。すると、いままで沈黙していた自然の波が、音として耳に届きはじめます。電波望遠鏡が不可視の宇宙を目に見せてくれたのと同じやり方で、この楽器は不可聴の波を耳に聴かせてくれます。</p>
+  <figure>
+    <svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="天文学との対比図">
+      <g font-family="sans-serif">
+        <rect x="10" y="10" width="370" height="220" rx="14" fill="#0d1530" stroke="#1d2b52"/>
+        <text x="195" y="40" fill="#8fa3bd" font-size="15" text-anchor="middle">天文学</text>
+        <path d="M60 150 A 40 40 0 0 1 140 150 Z" fill="none" stroke="#4cc9f0" stroke-width="2"/>
+        <line x1="100" y1="150" x2="100" y2="112" stroke="#4cc9f0" stroke-width="2"/>
+        <text x="100" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">電波（不可視）</text>
+        <text x="195" y="130" fill="#ffd166" font-size="22" text-anchor="middle">&#8594;</text>
+        <circle cx="290" cy="120" r="34" fill="none" stroke="#80ed99" stroke-width="2"/>
+        <circle cx="290" cy="120" r="20" fill="none" stroke="#4cc9f0" stroke-width="2"/>
+        <circle cx="290" cy="120" r="8" fill="#ffd166"/>
+        <text x="290" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">カラー天体画像（可視）</text>
+        <rect x="400" y="10" width="370" height="220" rx="14" fill="#0d1530" stroke="#1d2b52"/>
+        <text x="585" y="40" fill="#8fa3bd" font-size="15" text-anchor="middle">波紋シンセ</text>
+        <g stroke="#4cc9f0" fill="none" stroke-width="2">
+          <ellipse cx="490" cy="140" rx="16" ry="5"/>
+          <ellipse cx="490" cy="140" rx="34" ry="11" opacity="0.6"/>
+          <ellipse cx="490" cy="140" rx="52" ry="17" opacity="0.3"/>
+        </g>
+        <text x="490" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">波紋（不可聴）</text>
+        <text x="585" y="130" fill="#ffd166" font-size="22" text-anchor="middle">&#8594;</text>
+        <text x="680" y="132" fill="#ffd166" font-size="40" text-anchor="middle">&#9834;&#9834;</text>
+        <text x="680" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">音（可聴）</text>
+      </g>
+    </svg>
+    <figcaption>周波数を写し替えて、感覚の届く領域へ。天文学の手法の「音バージョン」。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>自然界は、聞こえない音であふれている<span class="en">WAVES ALL AROUND US</span></h2>
+  <div class="cards">
+    <div class="card"><div class="icon">&#127811;</div><h3>葉っぱの振動</h3><p>風を受けて震える葉。その揺れは数Hz — 立派な振動なのに、音にはなりません。</p></div>
+    <div class="card"><div class="icon">&#128167;</div><h3>水面の波紋</h3><p>一滴の雫が描く同心円。広がり、減衰していく美しい波形が、そこにあります。</p></div>
+    <div class="card"><div class="icon">&#127754;</div><h3>海の波</h3><p>数秒〜十数秒周期のうねり。地球規模の低音は、深すぎて誰の耳にも届きません。</p></div>
+  </div>
+  <p>これらの波は、形こそ音とまったく同じ「振動の記録」です。足りないのは周波数だけ。ならば周波数を持ち上げてやれば、自然が奏でていた音楽が聞こえるはずです。</p>
+</section>
+
+<section class="astro">
+  <h2>透明な波を、どうやって「観測」するか<span class="en">SENSING THE INVISIBLE WAVE</span></h2>
+  <p class="lead">最初の題材に選んだのは、水面の波紋です。しかし水は透明で、波紋はカメラでも捉えにくい繊細な現象。そこで<strong>ToF（Time of Flight）方式の距離センサ</strong>を水面の上に構え、水面までの距離＝変位を高速に測り続けることで、波紋を「変位の波形」としてそのまま記録します。</p>
+  <p>雫が着水した瞬間を検出すると、その前後2秒間の水面変位がひとつの「グレイン（音の粒）」として切り出されます。これはまさに、波紋という自然現象の生の波形データです。</p>
+  <figure>
+    <img class="pixel" src="stick_screen.png" alt="M5StickS3の画面：実測した波紋の変位波形" width="240" height="135">
+    <figcaption>観測ユニット（M5StickS3）の画面 — 緑の波形は実際の水滴が作った波紋の実測データ。<br>右上の赤丸は記録中、緑丸は発音中を示す。（LVGL Webシミュレータによるレンダリング）</figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="システム構成図">
+      <g font-family="sans-serif" font-size="12">
+        <text x="120" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">観測</text>
+        <rect x="30" y="45" width="180" height="52" rx="8" fill="#0d1530" stroke="#1d2b52"/>
+        <text x="120" y="66" fill="#dce6f2" text-anchor="middle">ToF距離センサ</text>
+        <text x="120" y="84" fill="#8fa3bd" text-anchor="middle">GP2Y0E03 / 1kHzポーリング</text>
+        <g stroke="#4cc9f0" fill="none" stroke-width="1.5">
+          <ellipse cx="120" cy="135" rx="14" ry="4"/>
+          <ellipse cx="120" cy="135" rx="30" ry="9" opacity="0.6"/>
+          <ellipse cx="120" cy="135" rx="46" ry="14" opacity="0.3"/>
+        </g>
+        <text x="120" y="170" fill="#8fa3bd" text-anchor="middle">水面の変位を直接測定</text>
+        <text x="390" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">変換</text>
+        <rect x="290" y="45" width="200" height="120" rx="8" fill="#0d1530" stroke="#1d2b52"/>
+        <text x="390" y="68" fill="#dce6f2" text-anchor="middle">M5StickS3</text>
+        <text x="390" y="90" fill="#8fa3bd" text-anchor="middle">着水検出・窓切り出し</text>
+        <text x="390" y="108" fill="#8fa3bd" text-anchor="middle">時間圧縮 + フェーズボコーダ</text>
+        <text x="390" y="126" fill="#ffd166" text-anchor="middle">波の大きさ &#8594; 音の高さ</text>
+        <text x="390" y="148" fill="#8fa3bd" text-anchor="middle">最大4ボイス同時発音</text>
+        <text x="650" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">演奏</text>
+        <rect x="560" y="45" width="180" height="120" rx="8" fill="#0d1530" stroke="#1d2b52"/>
+        <text x="650" y="68" fill="#dce6f2" text-anchor="middle">M5Stack Tab5</text>
+        <text x="650" y="90" fill="#8fa3bd" text-anchor="middle">シンセサイザ本体</text>
+        <text x="650" y="108" fill="#8fa3bd" text-anchor="middle">ADSR・ディレイ等の</text>
+        <text x="650" y="126" fill="#8fa3bd" text-anchor="middle">エフェクト &#8594; スピーカ</text>
+        <text x="650" y="148" fill="#ffd166" text-anchor="middle">&#9834; 波紋の音</text>
+        <line x1="215" y1="105" x2="285" y2="105" stroke="#4cc9f0" stroke-width="2" marker-end="url(#ar)"/>
+        <line x1="495" y1="105" x2="555" y2="105" stroke="#4cc9f0" stroke-width="2" marker-end="url(#ar)"/>
+        <text x="525" y="92" fill="#8fa3bd" text-anchor="middle" font-size="11">WiFi/UDP</text>
+        <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#4cc9f0"/></marker></defs>
+        <text x="390" y="230" fill="#8fa3bd" text-anchor="middle" font-size="13">雫を落とす &#8594; 約2秒の観測 &#8594; ピッチ変換 &#8594; ワイヤレスで音が鳴る</text>
+      </g>
+    </svg>
+    <figcaption>システム構成：ToF観測 → オンデバイス信号処理 → ワイヤレスシンセ再生</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>ピッチ変換 — 自然の波形を、そのまま音楽に<span class="en">PITCH SHIFTING NATURE</span></h2>
+  <p>切り出した波紋の波形は、時間圧縮とフェーズボコーダ処理によって可聴領域へ持ち上げられます。単なる早回しではなく、<strong>音の長さを保ったままピッチだけを移調</strong>できるのがポイントです。</p>
+  <p>さらに、<span class="pitchnote">波紋の大きさが音の高さを決めます</span>。大きな水滴が立てた大波は低めの音に、小さな雫の繊細な波紋は高い音に。振幅が半分になるごとに約1オクターブ上がる急峻なマッピングで、雫の一滴一滴が異なる音程を奏でます。連続で落とせば最大4音の和音になり、ディレイの残響が水面の余韻のように尾を引きます。</p>
+  <figure>
+    <img src="tab5_udp.png" alt="M5Stack Tab5シンセのUDPワイヤレス入力画面" width="1280" height="720">
+    <figcaption>受信側シンセサイザ（M5Stack Tab5）— ソースに「UDP」を選ぶと波紋の音がワイヤレスで鳴る。<br>エンベロープやディレイは鍵盤演奏と同じエフェクトチェーン。（LVGL Webシミュレータによるレンダリング）</figcaption>
+  </figure>
+  <table>
+    <tr><th>観測</th><td>ToF距離センサ GP2Y0E03（赤外線・非接触）を1kHzでポーリング、500Hzで波形記録</td></tr>
+    <tr><th>検出</th><td>エンベロープ比較による着水（オンセット）検出、150msプリロール付き2秒窓</td></tr>
+    <tr><th>変換</th><td>時間圧縮0.2倍 + 1024点フェーズボコーダ（再生時間を保ったまま移調）</td></tr>
+    <tr><th>音高</th><td>波の振幅 &#8594; ピッチ（+12〜+36半音、大きい波ほど低い音）</td></tr>
+    <tr><th>伝送</th><td>WiFi UDP・独自プロトコル（ボイスID付き、最大4ストリーム同時）</td></tr>
+    <tr><th>発音</th><td>M5Stack Tab5シンセ：ボイスごとのADSRエンベロープ + ディレイ等のエフェクト</td></tr>
+  </table>
+</section>
+
+<section class="astro">
+  <h2>その先へ<span class="en">WHAT'S NEXT</span></h2>
+  <p>水面の波紋は始まりにすぎません。葉っぱの揺れ、旗のはためき、海のうねり — 変位として観測できる波なら、なんでもこの楽器の「音源」になり得ます。自然界のあらゆる場所で鳴っている聞こえない音楽を、ひとつずつ聴きにいく。それがこのプロジェクトの楽しみです。</p>
+  <div class="links">
+    <a href="https://github.com/airpocket-soundman/M5StickS3_TOF">観測側ファームウェア（M5StickS3_TOF）</a>
+    <a href="https://github.com/airpocket-soundman/Tab5_synth">シンセ側ファームウェア（Tab5_synth）</a>
+  </div>
+</section>
+
+<footer>
+  波紋シンセ / Ripple Synth — airpocket-soundman<br>
+  M5StickS3 + GP2Y0E03 ToF sensor + M5Stack Tab5
+</footer>
+
+</body>
+</html>
