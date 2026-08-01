@@ -77,8 +77,8 @@ section p { margin-bottom: 1.2em; }
 figure { margin: 36px 0; text-align: center; }
 figure svg { width: 100%; height: auto; max-width: 780px; }
 figcaption { color: var(--muted); font-size: 0.85em; margin-top: 10px; }
-figure img { max-width: 100%; border-radius: 10px; border: 1px solid #1d2b52; }
-figure img.pixel { image-rendering: pixelated; width: min(480px, 92vw); }
+figure img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #1d2b52; }
+figure img.pixel { image-rendering: pixelated; width: min(480px, 92vw); height: auto; }
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -158,6 +158,11 @@ footer {
 
 <section class="astro">
   <h2>電波望遠鏡が、宇宙を「見せて」くれたように<span class="en">FROM RADIO TO VISIBLE — FROM SILENCE TO SOUND</span></h2>
+  <figure>
+    <img src="hercules_a_nasa.jpg" alt="電波銀河ヘラクレスA：VLA電波望遠鏡が捉えた不可視の電波ジェット（ピンク）をハッブルの可視光画像に重ねた合成画像" width="1920" height="1381">
+    <figcaption>電波銀河ヘラクレスA — 目には見えない電波（ピンクのジェット）を色に写し替え、ハッブル宇宙望遠鏡の可視光画像に重ねたもの。<br>
+    Credit: NASA, ESA, S. Baum and C. O'Dea (RIT), R. Perley and W. Cotton (NRAO/AUI/NSF), and the Hubble Heritage Team (STScI/AURA)</figcaption>
+  </figure>
   <p class="lead">わたしたちが目にする美しい天体写真の多くは、そもそも「見えない光」でできています。電波望遠鏡が捉えるのは、可視領域からはるかに外れた電波。それ自体を人間の目で見ることはできません。しかし周波数を可視領域へと写し替え、色を割り当てることで、電波の宇宙は色鮮やかな天文画像として、わたしたちの目の前に現れます。</p>
   <p><strong>波紋シンセは、その「音バージョン」です。</strong></p>
   <p>自然界には、耳に聞こえない「波」があふれています。風に揺れる葉っぱの振動、水面に広がる波紋、寄せては返す海の波。これらはすべて立派な振動＝波ですが、周波数が数Hz程度と低すぎるため、決して音として聞こえることはありません。</p>
