@@ -72,7 +72,7 @@ constexpr size_t kWindowSamples = kRecordRateHz * 2;                    // 2s wi
 // Playback reads the 500Hz recording at 16kHz -> exactly 32x compression;
 // a 5s window becomes a 156ms grain.
 constexpr float kRecordHighPassHz = 0.5f;  // remove DC water level, keep ripples
-constexpr float kOnsetThresholdMmDefault = 3.0f;   // above VL6180X noise floor (~2.9mm peaks)
+constexpr float kOnsetThresholdMmDefault = 9.0f;   // 3x noise-peak margin; droplets reach 10-35mm
 constexpr float kOnsetRatio = 2.0f;                // env_fast > env_slow * ratio
 constexpr float kEnvFastPeakDecay = 0.9868f;       // peak-hold, ~150ms decay @500Hz
 constexpr float kEnvSlowAlpha = 0.00664f;          // ~300ms @500Hz
@@ -185,15 +185,13 @@ float gMedianBuf[3] = {0.0f, 0.0f, 0.0f};
 size_t gMedianIndex = 0;
 uint64_t gPendingOnsets[kMaxPendingOnsets] = {};
 size_t gPendingOnsetCount = 0;
-// Grain queue (producer and consumer are both the audio task).
+// Grain queue (produced by the audio task's recorder, consumed by the grain
+// worker task; index updates are guarded by gGrainMux).
 int16_t gGrains[kGrainQueueSize][kWindowSamples] = {};
-float gGrainScale[kGrainQueueSize] = {};  // per-grain auto-normalize factor
 size_t gGrainRead = 0;
 size_t gGrainWrite = 0;
-size_t gGrainCount = 0;
-// Snapshot of the most recently extracted grain, for serial waveform dumps.
-int16_t gLastGrain[kWindowSamples] = {};
-volatile bool gLastGrainValid = false;
+volatile size_t gGrainCount = 0;
+portMUX_TYPE gGrainMux = portMUX_INITIALIZER_UNLOCKED;
 // Raw capture: every I2C poll (timestamp + raw register value), no filtering.
 // For offline reconstruction/filter experiments on the PC.
 constexpr size_t kRawCapCount = 4800;  // ~6s at ~800Hz polling
@@ -202,28 +200,41 @@ uint16_t gRawCapVal[kRawCapCount] = {};
 volatile size_t gRawCapIndex = kRawCapCount;  // == kRawCapCount means idle
 uint32_t gRawCapStartUs = 0;
 volatile bool gRawCapDumpPending = false;
-// Polyphonic grain voices: each completed window starts immediately on a
-// free voice with its own wire ID, so overlapping droplets overlap in sound
-// (and as separate streams on the Tab5 side).
+// Polyphonic grain voices. Voice buffers hold the FULLY PROCESSED audio
+// (time-stretch + amplitude-dependent pitch shift rendered offline by the
+// grain worker task), played back 1:1 at 16kHz.
 constexpr size_t kTxVoices = 4;
-constexpr uint8_t kTailChunks = 12;  // ~200ms of gate-off silence after a grain
+constexpr size_t kVoiceBufSamples = 6400;  // up to 400ms per grain
+constexpr uint8_t kTailChunks = 12;        // ~200ms of gate-off silence after a grain
 struct TxVoice {
-  bool active = false;
-  int16_t buf[kWindowSamples] = {};
-  float pos = 0.0f;  // fractional read position (playback-speed control)
+  volatile bool active = false;
+  int16_t* buf = nullptr;  // PSRAM
+  size_t len = 0;
+  size_t pos = 0;
   uint8_t id = 0;
   uint8_t tail = 0;
 };
-// Grain playback speed: 1.0 = raw 32x compression (62ms), 0.15 (PC-tuned
-// default) stretches each grain to ~417ms at a proportionally lower pitch.
+// Grain time stretch: 0.2 = each 2s window becomes a ~312ms sound.
 volatile float gPlaybackSpeed = 0.2f;
+// Amplitude->pitch mapping (mode B): ripples of kPitchCenterMm play at
+// Steep mapping (~1 octave per halving of wave height): real droplets only
+// span ~70-180mm, so a gentle slope sounds monotone. Center sits at the
+// biggest observed splashes; smaller ripples climb fast.
+// 200mm->0, 140mm->+6, 100mm->+12, 70mm->+18, <=50mm->+24 (clamp).
+constexpr float kPitchCenterMm = 200.0f;
+constexpr float kPitchSemisPer3x = 19.0f;
+constexpr float kPitchClampSemis = 24.0f;
 TxVoice gTxVoices[kTxVoices] = {};
 uint8_t gNextVoiceId = 1;
+// Peak (ring units) per queued grain, for the amplitude->pitch mapping.
+float gGrainPeakUnits[kGrainQueueSize] = {};
 // History of the last transmitted grains (exact UDP payload content), for
-// per-grain waveform inspection on the PC via the 'w' command.
+// per-grain waveform inspection on the PC via the 'w' command. In PSRAM.
 constexpr size_t kSentLogCount = 4;
-int16_t gSentGrains[kSentLogCount][kWindowSamples] = {};
+int16_t* gSentGrains[kSentLogCount] = {};
+size_t gSentLens[kSentLogCount] = {};
 uint8_t gSentIds[kSentLogCount] = {};
+float gSentSemis[kSentLogCount] = {};
 size_t gSentWrite = 0;
 size_t gSentCount = 0;
 // Stats for the display.
@@ -773,25 +784,18 @@ void recordStep(float hp_coef) {
           peak = magnitude;
         }
       }
-      // Auto-normalize: every droplet plays at a consistent, clip-free level
-      // regardless of ripple amplitude (amplification capped to avoid
-      // boosting pure noise into audibility).
-      float scale = 24000.0f / static_cast<float>(peak);
-      if (scale > 100.0f) {
-        scale = 100.0f;
-      }
-      gGrainScale[gGrainWrite] = scale;
-      memcpy(gLastGrain, grain, sizeof(gLastGrain));
-      gLastGrainValid = true;
+      gGrainPeakUnits[gGrainWrite] = static_cast<float>(peak);
+      taskENTER_CRITICAL(&gGrainMux);
       gGrainWrite = (gGrainWrite + 1) % kGrainQueueSize;
       ++gGrainCount;
+      taskEXIT_CRITICAL(&gGrainMux);
     } else {
       ++gGrainsDropped;
     }
   }
 }
 
-// Assign queued grains to free voices (each starts playing immediately).
+#if 0  // legacy direct grain player, superseded by the grain worker task
 void startQueuedGrains() {
   while (gGrainCount > 0) {
     TxVoice* free_voice = nullptr;
@@ -805,8 +809,8 @@ void startQueuedGrains() {
       break;  // all voices busy: grain stays queued
     }
     const int16_t* grain = gGrains[gGrainRead];
-    // Bake normalize + master volume + declick fades into the voice buffer.
-    const float scale = gGrainScale[gGrainRead] * (gOutputGain / 1333.0f);
+    // (legacy path, superseded by grainWorkerTask)
+    const float scale = gOutputGain / 1333.0f;
     for (size_t i = 0; i < kWindowSamples; ++i) {
       float value = static_cast<float>(grain[i]) * scale;
       if (i < kGrainFadeSamples) {
@@ -821,17 +825,212 @@ void startQueuedGrains() {
     free_voice->pos = 0;
     free_voice->tail = kTailChunks;
     free_voice->id = gNextVoiceId++;
-    memcpy(gSentGrains[gSentWrite], free_voice->buf, sizeof(free_voice->buf));
-    gSentIds[gSentWrite] = free_voice->id;
-    gSentWrite = (gSentWrite + 1) % kSentLogCount;
-    if (gSentCount < kSentLogCount) {
-      ++gSentCount;
-    }
     if (gNextVoiceId == 0) {
       gNextVoiceId = 1;
     }
     free_voice->active = true;
     ++gGrainsPlayed;
+  }
+}
+#endif  // legacy startQueuedGrains
+
+// ---------- Offline grain renderer (worker task) ----------
+// Radix-2 in-place FFT.
+void fftRadix2(float* re, float* im, int n, bool inv) {
+  for (int i = 1, j = 0; i < n; i++) {
+    int bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      float t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for (int len = 2; len <= n; len <<= 1) {
+    const float ang = (inv ? 2.0f : -2.0f) * 3.14159265f / static_cast<float>(len);
+    const float wr = cosf(ang), wi = sinf(ang);
+    for (int i = 0; i < n; i += len) {
+      float cr = 1.0f, ci = 0.0f;
+      for (int k = 0; k < len / 2; k++) {
+        const float ur = re[i + k], ui = im[i + k];
+        const float vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
+        const float vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const float ncr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr; cr = ncr;
+      }
+    }
+  }
+  if (inv) {
+    const float s = 1.0f / static_cast<float>(n);
+    for (int i = 0; i < n; i++) { re[i] *= s; im[i] *= s; }
+  }
+}
+
+constexpr int kPvFrame = 1024;
+constexpr int kPvHop = 256;
+constexpr size_t kPvMaxLen = 26000;  // fits a -24 semi resample at 0.2x speed
+// PSRAM work buffers, allocated in setup.
+float* gPvRes = nullptr;
+float* gPvOut = nullptr;
+float* gPvNorm = nullptr;
+
+float grainSampleCubic(const int16_t* d, float x) {
+  const int i = static_cast<int>(x);
+  if (i < 1 || i + 2 >= static_cast<int>(kWindowSamples)) {
+    if (i < 0 || i + 1 >= static_cast<int>(kWindowSamples)) return 0.0f;
+    const float f0 = x - static_cast<float>(i);
+    return static_cast<float>(d[i]) * (1.0f - f0) + static_cast<float>(d[i + 1]) * f0;
+  }
+  const float f = x - static_cast<float>(i);
+  const float p0 = d[i - 1], p1 = d[i], p2 = d[i + 1], p3 = d[i + 2];
+  return 0.5f * ((2.0f * p1) + (-p0 + p2) * f + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * f * f +
+                 (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * f * f * f);
+}
+
+// Render one grain: amplitude-dependent pitch shift (bigger ripple = lower
+// note; phase vocoder keeps the duration at gPlaybackSpeed).
+size_t renderGrain(const int16_t* grain, float peak_units, int16_t* out_buf, float* semis_out) {
+  const float speed = gPlaybackSpeed;
+  const float peak_mm = std::max(1.0f, peak_units / kRingScale);
+  float semis = -kPitchSemisPer3x * (logf(peak_mm / kPitchCenterMm) / logf(3.0f));
+  // Upward-only: droplets at/above the center play the original pitch,
+  // smaller ones shift up (never below the base note).
+  semis = std::max(0.0f, std::min(kPitchClampSemis, semis));
+  *semis_out = semis;
+  const float pitch = powf(2.0f, semis / 12.0f);
+  const float alpha = speed * pitch;
+  // Normalize each grain close to int16 full scale so the receiver gets the
+  // hottest clean signal possible.
+  const float norm_scale = std::min(100.0f, 32000.0f / peak_units) * (gOutputGain / 1333.0f);
+
+  size_t res_len = static_cast<size_t>(static_cast<float>(kWindowSamples) / alpha);
+  if (res_len > kPvMaxLen) res_len = kPvMaxLen;
+  for (size_t i = 0; i < res_len; ++i) {
+    gPvRes[i] = grainSampleCubic(grain, static_cast<float>(i) * alpha) * norm_scale;
+  }
+
+  size_t target_len = static_cast<size_t>(static_cast<float>(kWindowSamples) / speed);
+  if (target_len > kVoiceBufSamples) target_len = kVoiceBufSamples;
+
+  size_t out_len;
+  if (fabsf(semis) < 0.05f) {
+    out_len = std::min(res_len, target_len);
+    for (size_t i = 0; i < out_len; ++i) gPvOut[i] = gPvRes[i];
+  } else {
+    const float beta = pitch;
+    const int hs = std::max(1, static_cast<int>(lroundf(kPvHop * beta)));
+    const int frames = std::max(1, static_cast<int>((res_len + kPvHop - 1) / kPvHop));
+    size_t full_len = static_cast<size_t>(frames - 1) * hs + kPvFrame;
+    if (full_len > kPvMaxLen) full_len = kPvMaxLen;
+    out_len = std::min(full_len, target_len);
+    static float re[kPvFrame], im[kPvFrame], win[kPvFrame];
+    static float last_ph[kPvFrame / 2 + 1], sum_ph[kPvFrame / 2 + 1];
+    static bool win_init = false;
+    if (!win_init) {
+      for (int i = 0; i < kPvFrame; ++i) win[i] = 0.5f - 0.5f * cosf(2.0f * 3.14159265f * i / kPvFrame);
+      win_init = true;
+    }
+    for (size_t i = 0; i < full_len; ++i) { gPvOut[i] = 0.0f; gPvNorm[i] = 0.0f; }
+    for (int k = 0; k <= kPvFrame / 2; ++k) { last_ph[k] = 0.0f; sum_ph[k] = 0.0f; }
+    for (int f = 0; f < frames; ++f) {
+      const size_t in_pos = static_cast<size_t>(f) * kPvHop;
+      const size_t out_pos = static_cast<size_t>(f) * hs;
+      for (int i = 0; i < kPvFrame; ++i) {
+        const float v = (in_pos + i < res_len) ? gPvRes[in_pos + i] : 0.0f;
+        re[i] = v * win[i];
+        im[i] = 0.0f;
+      }
+      fftRadix2(re, im, kPvFrame, false);
+      for (int k = 0; k <= kPvFrame / 2; ++k) {
+        const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
+        const float ph = atan2f(im[k], re[k]);
+        const float expect = 2.0f * 3.14159265f * kPvHop * k / kPvFrame;
+        float d = ph - last_ph[k] - expect;
+        d -= 2.0f * 3.14159265f * lroundf(d / (2.0f * 3.14159265f));
+        const float true_w = 2.0f * 3.14159265f * k / kPvFrame + d / kPvHop;
+        last_ph[k] = ph;
+        sum_ph[k] = (f == 0) ? ph : sum_ph[k] + hs * true_w;
+        re[k] = mag * cosf(sum_ph[k]);
+        im[k] = mag * sinf(sum_ph[k]);
+        if (k > 0 && k < kPvFrame / 2) { re[kPvFrame - k] = re[k]; im[kPvFrame - k] = -im[k]; }
+      }
+      fftRadix2(re, im, kPvFrame, true);
+      for (int i = 0; i < kPvFrame; ++i) {
+        const size_t o = out_pos + i;
+        if (o < full_len) {
+          gPvOut[o] += re[i] * win[i];
+          gPvNorm[o] += win[i] * win[i];
+        }
+      }
+      vTaskDelay(1);  // stay preemptible: audio/sensor cadence unaffected
+    }
+    for (size_t i = 0; i < out_len; ++i) {
+      gPvOut[i] /= std::max(gPvNorm[i], 0.5f);
+    }
+  }
+
+  const size_t fi = std::min<size_t>(160, out_len / 4);
+  const size_t fo = std::min<size_t>(480, out_len / 4);
+  for (size_t i = 0; i < out_len; ++i) {
+    float v = gPvOut[i];
+    if (i < fi) v *= static_cast<float>(i) / static_cast<float>(fi);
+    if (out_len - 1 - i < fo) v *= static_cast<float>(out_len - 1 - i) / static_cast<float>(fo);
+    out_buf[i] = static_cast<int16_t>(std::max(-32768.0f, std::min(32767.0f, v)));
+  }
+  return out_len;
+}
+
+// Worker: pops raw grains, renders them offline, hands them to free voices.
+void grainWorkerTask(void*) {
+  static int16_t raw[kWindowSamples];
+  for (;;) {
+    if (gGrainCount > 0) {
+      TxVoice* free_voice = nullptr;
+      for (auto& voice : gTxVoices) {
+        if (!voice.active) {
+          free_voice = &voice;
+          break;
+        }
+      }
+      if (free_voice != nullptr && free_voice->buf != nullptr) {
+        const size_t slot = gGrainRead;
+        memcpy(raw, gGrains[slot], sizeof(raw));
+        const float peak = gGrainPeakUnits[slot];
+        taskENTER_CRITICAL(&gGrainMux);
+        gGrainRead = (gGrainRead + 1) % kGrainQueueSize;
+        --gGrainCount;
+        taskEXIT_CRITICAL(&gGrainMux);
+
+        float semis = 0.0f;
+        const size_t len = renderGrain(raw, peak, free_voice->buf, &semis);
+        free_voice->len = len;
+        free_voice->pos = 0;
+        free_voice->tail = kTailChunks;
+        free_voice->id = gNextVoiceId++;
+        if (gNextVoiceId == 0) {
+          gNextVoiceId = 1;
+        }
+        if (gSentGrains[gSentWrite] != nullptr) {
+          memcpy(gSentGrains[gSentWrite], free_voice->buf, len * sizeof(int16_t));
+          gSentLens[gSentWrite] = len;
+          gSentIds[gSentWrite] = free_voice->id;
+          gSentSemis[gSentWrite] = semis;
+          gSentWrite = (gSentWrite + 1) % kSentLogCount;
+          if (gSentCount < kSentLogCount) {
+            ++gSentCount;
+          }
+        }
+        Serial.printf("[GRAIN] id=%u peak=%.1fmm semis=%+.1f len=%ums\n", free_voice->id,
+                      static_cast<double>(peak / kRingScale), static_cast<double>(semis),
+                      static_cast<unsigned>(len / 16));
+        free_voice->active = true;
+        ++gGrainsPlayed;
+        continue;
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -845,7 +1044,6 @@ void audioTask(void*) {
     for (size_t s = 0; s < kAudioChunkFrames / kRecordDivider; ++s) {
       recordStep(record_hp_coef);  // 8 recording steps per 16ms chunk = 500Hz
     }
-    startQueuedGrains();
 
     std::memset(mix, 0, sizeof(mix));
     bool any_gate = false;
@@ -854,19 +1052,15 @@ void audioTask(void*) {
         continue;
       }
       bool gate;
-      if (voice.pos < static_cast<float>(kWindowSamples - 1)) {
-        const float speed = gPlaybackSpeed;
-        for (size_t i = 0; i < kAudioChunkFrames; ++i) {
-          if (voice.pos < static_cast<float>(kWindowSamples - 1)) {
-            const size_t idx = static_cast<size_t>(voice.pos);
-            const float frac = voice.pos - static_cast<float>(idx);
-            voice_chunk[i] = static_cast<int16_t>(static_cast<float>(voice.buf[idx]) * (1.0f - frac) +
-                                                  static_cast<float>(voice.buf[idx + 1]) * frac);
-            voice.pos += speed;
-          } else {
-            voice_chunk[i] = 0;
-          }
+      if (voice.pos < voice.len) {
+        const size_t n = std::min(kAudioChunkFrames, voice.len - voice.pos);
+        for (size_t i = 0; i < n; ++i) {
+          voice_chunk[i] = voice.buf[voice.pos + i];
         }
+        for (size_t i = n; i < kAudioChunkFrames; ++i) {
+          voice_chunk[i] = 0;
+        }
+        voice.pos += n;
         gate = true;
       } else {
         // Gate-off tail: keeps the receiver's stream alive through release.
@@ -1158,7 +1352,7 @@ void execSerialCommand(const char* command) {
     Serial.printf("[CMD] playback speed=%.3fx (%.0fms)\n", static_cast<double>(gPlaybackSpeed),
                   static_cast<double>(kWindowSamples / gPlaybackSpeed / 16.0f));
   } else if (strcmp(command, "s-") == 0) {
-    gPlaybackSpeed = std::max(0.05f, gPlaybackSpeed / 1.25f);
+    gPlaybackSpeed = std::max(0.16f, gPlaybackSpeed / 1.25f);
     Serial.printf("[CMD] playback speed=%.3fx (%.0fms)\n", static_cast<double>(gPlaybackSpeed),
                   static_cast<double>(kWindowSamples / gPlaybackSpeed / 16.0f));
   } else if (strcmp(command, "l+") == 0) {
@@ -1181,12 +1375,14 @@ void execSerialCommand(const char* command) {
       // faded, master volume applied) played back at 16kHz.
       for (size_t k = 0; k < gSentCount; ++k) {
         const size_t slot = (gSentWrite + kSentLogCount - gSentCount + k) % kSentLogCount;
-        Serial.printf("[TXGRAIN] index=%u id=%u n=%u unit=int16pcm playrate=16000\n", static_cast<unsigned>(k),
-                      static_cast<unsigned>(gSentIds[slot]), static_cast<unsigned>(kWindowSamples));
-        for (size_t i = 0; i < kWindowSamples; i += 10) {
-          for (size_t j = i; j < i + 10 && j < kWindowSamples; ++j) {
+        const size_t len = gSentLens[slot];
+        Serial.printf("[TXGRAIN] index=%u id=%u n=%u semis=%.1f unit=int16pcm playrate=16000\n",
+                      static_cast<unsigned>(k), static_cast<unsigned>(gSentIds[slot]),
+                      static_cast<unsigned>(len), static_cast<double>(gSentSemis[slot]));
+        for (size_t i = 0; i < len; i += 10) {
+          for (size_t j = i; j < i + 10 && j < len; ++j) {
             Serial.print(gSentGrains[slot][j]);
-            if (j + 1 < i + 10 && j + 1 < kWindowSamples) {
+            if (j + 1 < i + 10 && j + 1 < len) {
               Serial.print(',');
             }
           }
@@ -1315,11 +1511,25 @@ void setup() {
     Serial.println("speaker not available");
   }
 
+  // PSRAM allocations: voice buffers, PV work areas, sent-grain history.
+  for (auto& voice : gTxVoices) {
+    voice.buf = static_cast<int16_t*>(ps_malloc(kVoiceBufSamples * sizeof(int16_t)));
+  }
+  for (size_t i = 0; i < kSentLogCount; ++i) {
+    gSentGrains[i] = static_cast<int16_t*>(ps_malloc(kVoiceBufSamples * sizeof(int16_t)));
+  }
+  gPvRes = static_cast<float*>(ps_malloc(kPvMaxLen * sizeof(float)));
+  gPvOut = static_cast<float*>(ps_malloc(kPvMaxLen * sizeof(float)));
+  gPvNorm = static_cast<float*>(ps_malloc(kPvMaxLen * sizeof(float)));
+  Serial.printf("psram alloc: voices=%s pv=%s\n", gTxVoices[0].buf ? "ok" : "FAIL",
+                (gPvRes && gPvOut && gPvNorm) ? "ok" : "FAIL");
+
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(kApSsid, kApPassword);
   xTaskCreate(audioTask, "audio_tx", 4096, nullptr, 3, &gAudioTask);
   xTaskCreate(sensorTask, "sensor_poll", 4096, nullptr, 4, &gSensorTask);
+  xTaskCreate(grainWorkerTask, "grain_worker", 8192, nullptr, 2, nullptr);
 }
 
 void loop() {
@@ -1347,6 +1557,16 @@ void loop() {
     gWifiOk = wifiOk;
     Serial.printf("[WIFI] %s ip=%s\n", wifiOk ? "connected" : "disconnected",
                   wifiOk ? WiFi.localIP().toString().c_str() : "-");
+  }
+  // Reconnect watchdog: setAutoReconnect alone gives up when the AP is down
+  // for a while (e.g. the Tab5 rebooted); kick a fresh association attempt
+  // every 8s until the link returns.
+  static uint32_t last_reconnect_ms = 0;
+  if (!wifiOk && millis() - last_reconnect_ms > 8000) {
+    last_reconnect_ms = millis();
+    Serial.println("[WIFI] retrying connection...");
+    WiFi.disconnect();
+    WiFi.begin(kApSsid, kApPassword);
   }
 
   printStatus();
