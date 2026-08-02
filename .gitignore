@@ -1,0 +1,8 @@
+.pio/
+
+# PlatformIO/VS Code generates these with machine-specific absolute paths.
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+
+__pycache__/
+*.py[cod]
