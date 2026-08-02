@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#080a0e">
-  <title>SURFACE / SIGNAL — Water Surface Sonification Study</title>
-  <meta name="description" content="水面、ToFセンサ、信号処理を物理–計算オシレーターとして構成し、波紋から音源グレインを生成する研究 SURFACE / SIGNAL。自然現象をデジタル楽器の信号経路へ接続します。">
+  <title>RIPPLE OSCILLATOR — Water Surface Sonification Study</title>
+  <meta name="description" content="水面、ToFセンサ、信号処理を物理–計算オシレーターとして構成し、波紋から音源グレインを生成する研究 RIPPLE OSCILLATOR。自然現象をデジタル楽器の信号経路へ接続します。">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Noto+Sans+JP:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500&family=Syne:wght@500;600&display=swap');
 
@@ -445,11 +445,12 @@
       .nav-meta { display: none; }
       .nav-tools { gap: 0; }
       .hero-copy { padding: 130px 0 210px; }
-      .hero h1 { font-size: clamp(3.4rem, 18vw, 5rem); letter-spacing: -.07em; }
+      .hero h1 { font-size: clamp(3.2rem, 16vw, 4.6rem); letter-spacing: -.07em; }
       .hero-deck, .section-head, .section-copy, .cosmos-caption, .device-figure { grid-template-columns: 1fr; }
       .hero-deck { gap: 22px; margin-top: 42px; }
       main section { padding: 90px 0; }
       .section-head { gap: 24px; margin-bottom: 54px; }
+      .section-head .eyebrow { white-space: normal; }
       .section-copy, .future-copy { margin-left: 0; gap: 24px; }
       .map-head { display: none; }
       .map-row { grid-template-columns: 1fr; }
@@ -499,7 +500,7 @@
 <body>
   <nav aria-label="メインナビゲーション">
     <div class="shell">
-      <a class="wordmark" href="#top">SURFACE / SIGNAL</a>
+      <a class="wordmark" href="#top">RIPPLE OSCILLATOR</a>
       <div class="nav-tools">
         <span class="nav-meta">WATER SURFACE SONIFICATION STUDY / 2026</span>
         <div class="language-switcher" role="group" aria-label="表示言語">
@@ -514,7 +515,7 @@
   <header class="hero" id="top">
     <div class="shell hero-copy">
       <div class="eyebrow">Physical–computational oscillator</div>
-      <h1>SURFACE<span>/</span><br>SIGNAL</h1>
+      <h1>RIPPLE<br><span>OSCILLATOR</span></h1>
       <div class="hero-deck">
         <p class="hero-jp">自然現象を、<br>物理オシレーターに。</p>
         <p class="hero-en">Water, sensing and computation form a physical–computational oscillator that generates sound grains.</p>
@@ -547,8 +548,8 @@
           <h2>自然を録音するのではない。<br><span class="accent">自然と計算で発振する。</span></h2>
         </div>
         <div class="section-copy">
-          <p>マイクが捉えるのは、すでに音になった自然です。SURFACE / SIGNALが観測するのは、その手前にある動き。風に揺れる葉、水面を走る波紋、海のうねりを、変位の時系列として読み取ります。</p>
-          <p>SURFACE / SIGNALは、水面、ToFセンサ、信号処理をひとつの<strong>物理–計算オシレーター（以下、物理オシレーター）</strong>として構成します。水面が振動を生み、ToFが一点の変位を波形へ変え、プロセッサが2秒の観測窓を短い音源グレインへ変換する。自然と計算機が協働して音源を生成する仕組みです。</p>
+          <p>マイクが捉えるのは、すでに音になった自然です。RIPPLE OSCILLATORが観測するのは、その手前にある動き。風に揺れる葉、水面を走る波紋、海のうねりを、変位の時系列として読み取ります。</p>
+          <p>RIPPLE OSCILLATORは、水面、ToFセンサ、信号処理をひとつの<strong>物理–計算オシレーター（以下、物理オシレーター）</strong>として構成します。水面が振動を生み、ToFが一点の変位を波形へ変え、プロセッサが2秒の観測窓を短い音源グレインへ変換する。自然と計算機が協働して音源を生成する仕組みです。</p>
         </div>
       </div>
 
@@ -689,7 +690,7 @@
           <h2>水面・ToF・プロセッサを、<br>ひとつの発振系に。</h2>
         </div>
         <div class="section-copy">
-          <p>振動体である水面、単一点の変位を読むToFセンサ、波形を可聴化するプロセッサ。この三者を統合した系全体を、SURFACE / SIGNALでは「物理–計算オシレーター」と呼びます。</p>
+          <p>振動体である水面、単一点の変位を読むToFセンサ、波形を可聴化するプロセッサ。この三者を統合した系全体を、RIPPLE OSCILLATORでは「物理–計算オシレーター」と呼びます。</p>
           <p>雫の着水を検出すると、プリロールを含む2秒間を切り出し、時間圧縮とフェーズボコーダで16kHz・16-bit PCMへ変換します。その短い出力単位が、シンセサイザへ供給する音源グレインです。</p>
         </div>
 
@@ -789,7 +790,7 @@
           <figcaption>RECEIVER / M5STACK TAB5 — UDP INPUT, PER-VOICE ENVELOPE, MIX AND SHARED EFFECT PROCESSING</figcaption>
           <div class="receiver-copy">
             <h3>物理オシレーターを、音源回路へ接続する。</h3>
-            <p>一般的なシンセサイザでは、内蔵オシレーターがサイン波・ノコギリ波・矩形波などを生成します。SURFACE / SIGNALでは、その音源位置へ<strong>物理–計算オシレーターが生成した短いグレイン</strong>を供給します。PCMをUDPで受け取ったTab5は、最大4ボイスを個別にADSR処理してミックスし、フィルター、コーラス、ディレイ、歪み、ビットクラッシャーを適用します。これは自然音の録音や模倣ではなく、物理現象を含む発振系によるデジタル音源です。</p>
+            <p>一般的なシンセサイザでは、内蔵オシレーターがサイン波・ノコギリ波・矩形波などを生成します。RIPPLE OSCILLATORでは、その音源位置へ<strong>物理–計算オシレーターが生成した短いグレイン</strong>を供給します。PCMをUDPで受け取ったTab5は、最大4ボイスを個別にADSR処理してミックスし、フィルター、コーラス、ディレイ、歪み、ビットクラッシャーを適用します。これは自然音の録音や模倣ではなく、物理現象を含む発振系によるデジタル音源です。</p>
           </div>
         </figure>
       </div>
@@ -811,7 +812,7 @@
   </main>
 
   <footer>
-    <div class="shell"><span>SURFACE / SIGNAL — AIRPOCKET-SOUNDMAN</span><span>M5STICKS3 + GP2Y0E03 + M5STACK TAB5</span></div>
+    <div class="shell"><span>RIPPLE OSCILLATOR — AIRPOCKET-SOUNDMAN</span><span>M5STICKS3 + GP2Y0E03 + M5STACK TAB5</span></div>
   </footer>
   <script src="grain-player.js"></script>
   <script src="i18n.js"></script>
