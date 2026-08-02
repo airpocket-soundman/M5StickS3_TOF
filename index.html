@@ -1,289 +1,819 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>波紋シンセ — 聞こえない波を、音として聴く</title>
-<meta name="description" content="水面の波紋をToFセンサで観測し、ピッチ変換して音として楽しむ楽器。電波望遠鏡が不可視の宇宙を可視化するように、可聴域外の「波」を耳に届けます。">
-<style>
-:root {
-  --bg: #060913;
-  --bg2: #0b1226;
-  --ink: #dce6f2;
-  --muted: #8fa3bd;
-  --accent: #4cc9f0;
-  --accent2: #80ed99;
-  --gold: #ffd166;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
-  line-height: 1.9;
-}
-.hero {
-  position: relative;
-  min-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 48px 24px;
-  background: radial-gradient(ellipse at 50% -20%, #1b2a55 0%, var(--bg) 60%);
-  overflow: hidden;
-}
-.hero h1 {
-  font-size: clamp(2.2rem, 6vw, 4rem);
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  background: linear-gradient(120deg, var(--accent), var(--accent2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  margin-bottom: 18px;
-}
-.hero p.tag {
-  font-size: clamp(1rem, 2.4vw, 1.35rem);
-  color: var(--muted);
-  max-width: 640px;
-}
-.hero .ripple-svg { width: min(680px, 92vw); margin-top: 40px; }
-section {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 72px 24px;
-}
-section h2 {
-  font-size: clamp(1.5rem, 3.6vw, 2.1rem);
-  margin-bottom: 28px;
-  color: var(--accent);
-  letter-spacing: 0.06em;
-}
-section h2 span.en {
-  display: block;
-  font-size: 0.7em;
-  color: var(--muted);
-  letter-spacing: 0.18em;
-  font-weight: 400;
-}
-section p { margin-bottom: 1.2em; }
-.lead { font-size: 1.06em; }
-.astro {
-  background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 50%, var(--bg) 100%);
-}
-figure { margin: 36px 0; text-align: center; }
-figure svg { width: 100%; height: auto; max-width: 780px; }
-figcaption { color: var(--muted); font-size: 0.85em; margin-top: 10px; }
-figure img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #1d2b52; }
-figure img.pixel { image-rendering: pixelated; width: min(480px, 92vw); height: auto; }
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 18px;
-  margin: 36px 0;
-}
-.card {
-  background: #0d1530;
-  border: 1px solid #1d2b52;
-  border-radius: 14px;
-  padding: 22px;
-}
-.card h3 { color: var(--accent2); font-size: 1.02em; margin-bottom: 10px; }
-.card p { font-size: 0.92em; color: var(--muted); margin: 0; }
-.card .icon { font-size: 1.8em; margin-bottom: 8px; }
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 28px 0;
-  font-size: 0.92em;
-}
-th, td { border: 1px solid #1d2b52; padding: 10px 14px; text-align: left; }
-th { background: #0d1530; color: var(--accent); font-weight: 600; white-space: nowrap; }
-td { color: var(--ink); }
-.links a {
-  display: inline-block;
-  margin: 6px 12px 6px 0;
-  padding: 12px 22px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 0.95em;
-  transition: background 0.2s, color 0.2s;
-}
-.links a:hover { background: var(--accent); color: var(--bg); }
-footer {
-  text-align: center;
-  padding: 48px 24px 64px;
-  color: var(--muted);
-  font-size: 0.85em;
-  border-top: 1px solid #131d3d;
-}
-.pitchnote { color: var(--gold); }
-@media (max-width: 600px) { section { padding: 56px 18px; } }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080a0e">
+  <title>SURFACE / SIGNAL — Water Surface Sonification Study</title>
+  <meta name="description" content="水面、ToFセンサ、信号処理を物理–計算オシレーターとして構成し、波紋から音源グレインを生成する研究 SURFACE / SIGNAL。自然現象をデジタル楽器の信号経路へ接続します。">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Noto+Sans+JP:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500&family=Syne:wght@500;600&display=swap');
+
+    :root {
+      --bg: #080a0e;
+      --surface: #0d1015;
+      --ink: #eceee9;
+      --muted: #8b9295;
+      --line: rgba(236, 238, 233, .14);
+      --aqua: #79e6d0;
+      --blue: #75a8ff;
+      --warm: #ffb36b;
+      --max: 1180px;
+      --font-display: "Syne", "Noto Sans JP", sans-serif;
+      --font-body: "Noto Sans JP", sans-serif;
+      --font-data: "DM Mono", monospace;
+      --text-body: clamp(1.15rem, 2.2vw, 1.75rem);
+      --text-support: clamp(1rem, 1.15vw, 1.12rem);
+      --text-label: .75rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; font-size: clamp(16px, calc(15px + .18vw), 18px); }
+    html[lang="zh-CN"] {
+      --font-body: "Noto Sans SC", "Noto Sans JP", sans-serif;
+      --font-display: "Syne", "Noto Sans SC", "Noto Sans JP", sans-serif;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-weight: 300;
+      line-height: 1.9;
+      overflow-x: hidden;
+    }
+    a { color: inherit; }
+    strong { font-weight: 500; }
+    ::selection { color: var(--bg); background: var(--aqua); }
+
+    .shell { width: min(calc(100% - 48px), var(--max)); margin-inline: auto; }
+    .mono { font-family: var(--font-data); }
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--aqua);
+      font: 300 var(--text-label)/1 var(--font-data);
+      letter-spacing: .17em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; }
+
+    nav {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 10;
+      height: 84px;
+      display: flex;
+      align-items: center;
+    }
+    nav .shell { display: flex; align-items: center; justify-content: space-between; }
+    .wordmark {
+      font: 600 1rem/1 var(--font-display);
+      letter-spacing: .22em;
+      text-decoration: none;
+    }
+    .nav-tools { display: flex; align-items: center; gap: 24px; }
+    .nav-meta { color: var(--muted); font: 300 var(--text-label)/1 var(--font-data); letter-spacing: .1em; }
+    .language-switcher { display: flex; align-items: center; gap: 3px; }
+    .language-switcher button {
+      min-width: 34px;
+      padding: 7px 6px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid transparent;
+      font: 300 .68rem/1 var(--font-data);
+      letter-spacing: .06em;
+      cursor: pointer;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+    .language-switcher button:hover { color: var(--ink); }
+    .language-switcher button[aria-pressed="true"] {
+      color: var(--aqua);
+      border-color: rgba(121, 230, 208, .42);
+      background: rgba(121, 230, 208, .06);
+    }
+    .language-switcher button:focus-visible { outline: 2px solid var(--warm); outline-offset: 2px; }
+
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      display: grid;
+      align-items: center;
+      isolation: isolate;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      background:
+        radial-gradient(circle at 77% 48%, rgba(117, 168, 255, .11), transparent 27%),
+        radial-gradient(circle at 71% 60%, rgba(121, 230, 208, .07), transparent 34%);
+    }
+    .hero-copy { position: relative; z-index: 2; padding: 150px 0 210px; }
+    .hero h1 {
+      margin: 24px 0 0;
+      font: 500 clamp(4.9rem, 15vw, 11.5rem)/.78 var(--font-display);
+      letter-spacing: -.055em;
+    }
+    .hero h1 span { color: var(--aqua); }
+    .hero-deck {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      max-width: 780px;
+      margin-top: 54px;
+    }
+    .hero-jp { margin: 0; font-size: clamp(1.18rem, 2vw, 1.65rem); line-height: 1.65; letter-spacing: .04em; }
+    .hero-en { margin: 4px 0 0; color: var(--muted); font: 300 .82rem/1.75 var(--font-data); max-width: 320px; }
+
+    .hero-visual {
+      position: absolute;
+      inset: auto 0 0;
+      height: 43%;
+      z-index: -1;
+      opacity: .88;
+    }
+    .hero-visual svg { display: block; width: 100%; height: 100%; }
+    .scan-line { stroke-dasharray: 7 12; animation: scan 12s linear infinite; }
+    @keyframes scan { to { stroke-dashoffset: -190px; } }
+
+    main section { padding: 140px 0; border-bottom: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: 1fr 2fr; gap: 48px; margin-bottom: 80px; }
+    .section-head .eyebrow { font-size: clamp(1.1rem, 1.4vw, 1.25rem); line-height: 1.2; white-space: nowrap; }
+    .section-head h2 {
+      margin: 0;
+      font: 500 clamp(2rem, 4.6vw, 4.2rem)/1.18 var(--font-display);
+      letter-spacing: -.035em;
+      max-width: 780px;
+    }
+    .section-copy { display: grid; grid-template-columns: 1fr; gap: 28px; max-width: 760px; margin-left: calc(33.333% + 16px); }
+    .section-copy p,
+    .device-copy p,
+    .receiver-copy p,
+    .future-copy {
+      font-family: var(--font-body);
+      font-size: var(--text-body);
+      line-height: 1.85;
+      letter-spacing: .015em;
+    }
+    .section-copy p { margin: 0; color: #bdc2c0; }
+    .accent { color: var(--aqua); }
+
+    .cosmos-frame {
+      width: min(1440px, 100%);
+      margin: 88px auto 0;
+      position: relative;
+    }
+    .cosmos-frame img {
+      display: block;
+      width: 100%;
+      height: min(72vw, 790px);
+      object-fit: cover;
+      border: 0;
+      border-radius: 0;
+      filter: saturate(.82) contrast(1.05);
+    }
+    .cosmos-caption {
+      width: min(calc(100% - 48px), var(--max));
+      margin: 16px auto 0;
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 48px;
+      color: var(--muted);
+      font: 300 var(--text-label)/1.7 var(--font-data);
+    }
+    .cosmos-caption p { margin: 0; }
+
+    .transduction-map {
+      margin-top: 100px;
+      border-block: 1px solid var(--line);
+      font-family: var(--font-data);
+    }
+    .map-head,
+    .map-row {
+      display: grid;
+      grid-template-columns: 1.2fr .9fr 1.2fr;
+    }
+    .map-head > div {
+      padding: 18px 24px;
+      color: var(--muted);
+      font-size: var(--text-label);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .map-head > div + div,
+    .map-cell + .map-cell { border-left: 1px solid var(--line); }
+    .map-row { min-height: 238px; border-top: 1px solid var(--line); }
+    .map-cell { position: relative; padding: 30px 24px; }
+    .map-kicker { color: var(--muted); font-size: var(--text-label); letter-spacing: .12em; }
+    .map-cell h3 { margin: 9px 0 0; font: 400 1rem/1.4 var(--font-body); }
+    .map-range { position: absolute; inset: auto 24px 24px; color: var(--muted); font-size: var(--text-label); }
+    .map-range strong { color: var(--ink); font-weight: 300; }
+    .scientific-plot {
+      position: absolute;
+      inset: 78px 24px auto;
+      height: 104px;
+    }
+    .scientific-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    .plot-grid { stroke: #eceee9; stroke-opacity: .09; stroke-width: .7; vector-effect: non-scaling-stroke; }
+    .plot-axis { stroke: #eceee9; stroke-opacity: .24; stroke-width: .8; vector-effect: non-scaling-stroke; }
+    .plot-label { fill: #8b9295; font: 9.5px var(--font-data); letter-spacing: .04em; }
+    .fft-line { fill: none; stroke: var(--blue); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+    .fft-fill { fill: url(#fft-fill); opacity: .24; }
+    .ripple-mesh { fill: none; stroke: var(--aqua); stroke-width: .75; stroke-opacity: .54; vector-effect: non-scaling-stroke; }
+    .ripple-mesh.minor { stroke: var(--blue); stroke-opacity: .22; }
+    .ripple-ridge { fill: none; stroke: #a5f4e4; stroke-width: 1.15; stroke-opacity: .9; vector-effect: non-scaling-stroke; }
+    .measurement-ray { fill: none; stroke: var(--warm); stroke-width: 1.1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+    .measurement-sensor { fill: var(--bg); stroke: var(--warm); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .measurement-point { fill: var(--warm); stroke: var(--bg); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .analog-line { fill: none; stroke: #72d694; stroke-width: 1.55; vector-effect: non-scaling-stroke; }
+    .analog-ghost { fill: none; stroke: #72d694; stroke-width: 4; stroke-opacity: .08; vector-effect: non-scaling-stroke; }
+    .processor { display: grid; place-items: center; text-align: center; }
+    .processor::before,
+    .processor::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 24px;
+      height: 1px;
+      background: var(--aqua);
+    }
+    .processor::before { left: 0; }
+    .processor::after { right: 0; }
+    .processor-code { color: var(--aqua); font-size: var(--text-label); letter-spacing: .11em; }
+    .processor-name { margin-top: 10px; font: 400 .9rem/1.8 var(--font-body); }
+    .processor-note { margin-top: 7px; color: var(--muted); font: 300 var(--text-label)/1.6 var(--font-body); letter-spacing: .03em; }
+    .visible-band {
+      position: absolute;
+      inset: 106px 24px auto;
+      height: 13px;
+      background: linear-gradient(90deg, #684dff, #397cff 20%, #46d5d0 42%, #79e6a3 58%, #f1d66b 76%, #ff8b64);
+      box-shadow: 0 0 24px rgba(121, 230, 208, .13);
+    }
+    .visible-band::before,
+    .visible-band::after { position: absolute; top: 23px; color: var(--muted); font-size: .7rem; }
+    .visible-band::before { content: "430 THz"; left: 0; }
+    .visible-band::after { content: "770 THz"; right: 0; }
+    .map-thesis {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 18px 24px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: var(--text-label);
+      letter-spacing: .06em;
+    }
+    .map-thesis strong { color: var(--aqua); font-weight: 300; }
+
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
+    .principle { padding: 38px 42px 16px 0; min-height: 260px; border-right: 1px solid var(--line); }
+    .principle + .principle { padding-left: 42px; }
+    .principle:last-child { border-right: 0; }
+    .principle .num { color: var(--aqua); font: 300 var(--text-label) var(--font-data); }
+    .principle h3 { margin: 55px 0 16px; font: 400 1.12rem/1.5 var(--font-body); }
+    .principle p { margin: 0; color: var(--muted); font-size: var(--text-support); line-height: 1.85; }
+
+    .process {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-top: 80px;
+      counter-reset: step;
+    }
+    .process-step { position: relative; min-height: 320px; padding: 35px 26px 40px; border: 1px solid var(--line); margin-left: -1px; counter-increment: step; }
+    .process-step::before { content: "0" counter(step); color: var(--aqua); font: 300 var(--text-label) var(--font-data); }
+    .process-step h3 { margin: 104px 0 14px; font: 400 1.12rem/1.5 var(--font-body); }
+    .process-step p { margin: 0; color: var(--muted); font-size: var(--text-support); line-height: 1.75; }
+    .process-step .signal {
+      position: absolute;
+      inset: 56px 30px auto;
+      height: 70px;
+      width: calc(100% - 60px);
+    }
+
+    .device-figure { margin: 96px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+    .device-figure img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+    .device-copy h3 { margin: 0 0 24px; font: 500 clamp(1.5rem, 3vw, 2.7rem)/1.35 var(--font-display); }
+    .device-copy p { margin: 0; color: var(--muted); }
+
+    .specs { margin-top: 96px; border-top: 1px solid var(--line); }
+    .spec-row { display: grid; grid-template-columns: 180px 1fr; gap: 42px; padding: 23px 0; border-bottom: 1px solid var(--line); }
+    .spec-row dt { color: var(--aqua); font: 300 var(--text-label) var(--font-data); letter-spacing: .08em; text-transform: uppercase; }
+    .spec-row dd { margin: 0; color: #bdc2c0; font-size: var(--text-support); line-height: 1.75; }
+
+    .audio-lab { margin-top: 84px; border-block: 1px solid var(--line); }
+    .audio-lab-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 32px;
+      align-items: center;
+      padding: 30px 0;
+    }
+    .audio-lab-kicker { color: var(--aqua); font: 300 var(--text-label)/1.5 var(--font-data); letter-spacing: .1em; }
+    .audio-lab-head h3 { margin: 8px 0 0; font: 400 clamp(1.35rem, 2.2vw, 2rem)/1.4 var(--font-body); }
+    .audio-play {
+      min-width: 220px;
+      padding: 15px 20px;
+      color: var(--bg);
+      background: var(--aqua);
+      border: 1px solid var(--aqua);
+      font: 400 .82rem/1 var(--font-data);
+      letter-spacing: .06em;
+      cursor: pointer;
+      transition: color .2s, background .2s;
+    }
+    .audio-play:hover,
+    .audio-play.is-playing { color: var(--aqua); background: transparent; }
+    .audio-play:focus-visible { outline: 2px solid var(--warm); outline-offset: 3px; }
+    .audio-wave { position: relative; border-block: 1px solid var(--line); background: rgba(117, 168, 255, .025); }
+    .audio-wave canvas { display: block; width: 100%; height: 190px; }
+    .audio-wave-meta {
+      position: absolute;
+      inset: 14px 16px auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      color: var(--muted);
+      font: 300 var(--text-label)/1.5 var(--font-data);
+      pointer-events: none;
+    }
+    .audio-controls { display: grid; grid-template-columns: repeat(4, 1fr); }
+    .audio-control { padding: 28px 24px 30px; border-right: 1px solid var(--line); }
+    .audio-control:last-child { border-right: 0; }
+    .audio-control-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .audio-control-name { font: 400 .92rem/1.4 var(--font-body); }
+    .audio-control output { color: var(--aqua); font: 300 var(--text-label)/1 var(--font-data); }
+    .audio-control small { display: block; margin-top: 5px; color: var(--muted); font: 300 .68rem/1.5 var(--font-data); }
+    .audio-control input[type="range"] {
+      width: 100%;
+      height: 20px;
+      margin: 24px 0 0;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    .audio-control input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: rgba(236, 238, 233, .35); }
+    .audio-control input[type="range"]::-webkit-slider-thumb {
+      width: 14px;
+      height: 14px;
+      margin-top: -6.5px;
+      appearance: none;
+      border: 1px solid var(--aqua);
+      border-radius: 50%;
+      background: var(--bg);
+    }
+    .audio-control input[type="range"]::-moz-range-track { height: 1px; background: rgba(236, 238, 233, .35); }
+    .audio-control input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: 1px solid var(--aqua); border-radius: 50%; background: var(--bg); }
+    .audio-lab-note { margin: 0; padding: 22px 0; color: var(--muted); font: 300 .78rem/1.75 var(--font-data); }
+
+    .source-position {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: stretch;
+      margin-top: 90px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .source-block { padding: 34px 36px 38px; }
+    .source-block:first-child { border-right: 1px solid var(--line); }
+    .source-block:last-child { border-left: 1px solid var(--line); }
+    .source-label { color: var(--aqua); font: 300 var(--text-label) var(--font-data); letter-spacing: .08em; }
+    .source-block h3 { margin: 48px 0 12px; font: 400 1.12rem/1.5 var(--font-body); }
+    .source-block p { margin: 0; color: var(--muted); font: 300 .82rem/1.8 var(--font-data); }
+    .source-arrow { display: grid; place-items: center; min-width: 90px; color: var(--aqua); font: 300 1.4rem var(--font-data); }
+
+    .receiver { margin-top: 90px; }
+    .receiver-link { position: relative; display: block; overflow: hidden; text-decoration: none; background: #050709; }
+    .receiver-link::after {
+      content: "OPEN TAB5_SYNTH REPOSITORY  ↗";
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      padding: 10px 13px;
+      color: var(--ink);
+      background: rgba(5, 7, 9, .86);
+      border: 1px solid rgba(121, 230, 208, .5);
+      font: 300 var(--text-label) var(--font-data);
+      letter-spacing: .06em;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+    .receiver-link:hover::after { color: #050709; border-color: var(--aqua); background: var(--aqua); }
+    .receiver img { display: block; width: 100%; height: auto; transition: opacity .2s; }
+    .receiver-link:hover img { opacity: .82; }
+    .receiver figcaption { margin-top: 14px; color: var(--muted); font: 300 var(--text-label)/1.7 var(--font-data); }
+    .receiver-copy { display: grid; grid-template-columns: 1fr 2fr; gap: 70px; margin-top: 48px; }
+    .receiver-copy h3 { margin: 0; font: 500 clamp(1.4rem, 2.8vw, 2.5rem)/1.35 var(--font-display); }
+    .receiver-copy p { margin: 0; color: var(--muted); }
+    .receiver-copy strong { color: var(--ink); font-weight: 400; }
+
+    .future { position: relative; overflow: hidden; }
+    .future::after {
+      content: "SIGNAL";
+      position: absolute;
+      right: -2vw;
+      bottom: -4vw;
+      color: rgba(236, 238, 233, .025);
+      font: 600 18vw/1 var(--font-display);
+      pointer-events: none;
+    }
+    .future-copy { max-width: 760px; margin: 0 0 70px 33.333%; }
+    .links { display: flex; flex-wrap: wrap; gap: 12px; }
+    .links a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 34px;
+      min-width: 300px;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+      text-decoration: none;
+      font: 300 .82rem var(--font-data);
+      transition: border-color .2s, background .2s;
+    }
+    .links a::after { content: "↗"; color: var(--aqua); }
+    .links a:hover { border-color: var(--aqua); background: rgba(121, 230, 208, .05); }
+
+    footer { padding: 38px 0 50px; }
+    footer .shell { display: flex; justify-content: space-between; color: var(--muted); font: 300 var(--text-label) var(--font-data); }
+
+    @media (max-width: 800px) {
+      .shell { width: min(calc(100% - 32px), var(--max)); }
+      .nav-meta { display: none; }
+      .nav-tools { gap: 0; }
+      .hero-copy { padding: 130px 0 210px; }
+      .hero h1 { font-size: clamp(3.4rem, 18vw, 5rem); letter-spacing: -.07em; }
+      .hero-deck, .section-head, .section-copy, .cosmos-caption, .device-figure { grid-template-columns: 1fr; }
+      .hero-deck { gap: 22px; margin-top: 42px; }
+      main section { padding: 90px 0; }
+      .section-head { gap: 24px; margin-bottom: 54px; }
+      .section-copy, .future-copy { margin-left: 0; gap: 24px; }
+      .map-head { display: none; }
+      .map-row { grid-template-columns: 1fr; }
+      .map-cell { min-height: 238px; }
+      .map-cell + .map-cell { border-left: 0; border-top: 1px solid var(--line); }
+      .processor { min-height: 155px; }
+      .processor::before, .processor::after { top: 0; left: 50%; width: 1px; height: 22px; }
+      .processor::after { inset: auto auto 0 50%; }
+      .map-thesis { flex-direction: column; }
+      .principles, .process { grid-template-columns: 1fr; }
+      .principle, .principle + .principle { min-height: auto; padding: 28px 0 34px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .principle h3 { margin-top: 30px; }
+      .process-step { min-height: 270px; margin: -1px 0 0; }
+      .source-position { grid-template-columns: 1fr; }
+      .source-block:first-child { border-right: 0; border-bottom: 1px solid var(--line); }
+      .source-block:last-child { border-left: 0; border-top: 1px solid var(--line); }
+      .source-arrow { min-height: 70px; transform: rotate(90deg); }
+      .device-figure { gap: 42px; }
+      .spec-row { grid-template-columns: 110px 1fr; gap: 18px; }
+      .audio-lab-head { grid-template-columns: 1fr; }
+      .audio-play { width: 100%; }
+      .audio-wave canvas { height: 150px; }
+      .audio-wave-meta { position: static; padding: 12px 16px; flex-direction: column; gap: 2px; }
+      .audio-controls { grid-template-columns: 1fr 1fr; }
+      .audio-control:nth-child(2) { border-right: 0; }
+      .audio-control:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .cosmos-caption { width: calc(100% - 32px); gap: 8px; }
+      .receiver-copy { grid-template-columns: 1fr; gap: 22px; }
+      .receiver-link::after { right: 10px; bottom: 10px; font-size: .72rem; }
+      .links a { min-width: 100%; }
+      footer .shell { gap: 20px; flex-direction: column; }
+    }
+
+    @media (max-width: 520px) {
+      .audio-controls { grid-template-columns: 1fr; }
+      .audio-control,
+      .audio-control:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); }
+      .audio-control:last-child { border-bottom: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .scan-line { animation: none; }
+    }
+  </style>
 </head>
 <body>
+  <nav aria-label="メインナビゲーション">
+    <div class="shell">
+      <a class="wordmark" href="#top">SURFACE / SIGNAL</a>
+      <div class="nav-tools">
+        <span class="nav-meta">WATER SURFACE SONIFICATION STUDY / 2026</span>
+        <div class="language-switcher" role="group" aria-label="表示言語">
+          <button type="button" data-lang="ja" aria-pressed="true">JA</button>
+          <button type="button" data-lang="en" aria-pressed="false">EN</button>
+          <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+        </div>
+      </div>
+    </div>
+  </nav>
 
-<div class="hero">
-  <h1>波紋シンセ</h1>
-  <p class="tag">Ripple Synth — 聞こえない「波」を、音として聴く楽器</p>
-  <svg class="ripple-svg" viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="波紋が音符に変わるイメージ">
-    <defs>
-      <linearGradient id="wg" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#4cc9f0"/><stop offset="1" stop-color="#80ed99"/>
-      </linearGradient>
-    </defs>
-    <g stroke="url(#wg)" fill="none" stroke-width="2" opacity="0.9">
-      <ellipse cx="140" cy="150" rx="26" ry="7"/>
-      <ellipse cx="140" cy="150" rx="58" ry="15" opacity="0.7"/>
-      <ellipse cx="140" cy="150" rx="92" ry="24" opacity="0.45"/>
-      <ellipse cx="140" cy="150" rx="126" ry="33" opacity="0.25"/>
-    </g>
-    <circle cx="140" cy="70" r="5" fill="#4cc9f0">
-      <animate attributeName="cy" values="40;140;40" dur="2.4s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="1;0.15;1" dur="2.4s" repeatCount="indefinite"/>
-    </circle>
-    <path d="M300 100 C 330 60, 360 140, 390 100 S 450 60, 480 100" stroke="#8fa3bd" stroke-width="2" fill="none" stroke-dasharray="4 5"/>
-    <g fill="#ffd166">
-      <text x="530" y="80" font-size="42">&#9834;</text>
-      <text x="575" y="120" font-size="30">&#9834;</text>
-      <text x="610" y="70" font-size="24">&#9834;</text>
-    </g>
-  </svg>
-</div>
-
-<section class="astro">
-  <h2>電波望遠鏡が、宇宙を「見せて」くれたように<span class="en">FROM RADIO TO VISIBLE — FROM SILENCE TO SOUND</span></h2>
-  <figure>
-    <img src="hercules_a_nasa.jpg" alt="電波銀河ヘラクレスA：VLA電波望遠鏡が捉えた不可視の電波ジェット（ピンク）をハッブルの可視光画像に重ねた合成画像" width="1920" height="1381">
-    <figcaption>電波銀河ヘラクレスA — 目には見えない電波（ピンクのジェット）を色に写し替え、ハッブル宇宙望遠鏡の可視光画像に重ねたもの。<br>
-    Credit: NASA, ESA, S. Baum and C. O'Dea (RIT), R. Perley and W. Cotton (NRAO/AUI/NSF), and the Hubble Heritage Team (STScI/AURA)</figcaption>
-  </figure>
-  <p class="lead">わたしたちが目にする美しい天体写真の多くは、そもそも「見えない光」でできています。電波望遠鏡が捉えるのは、可視領域からはるかに外れた電波。それ自体を人間の目で見ることはできません。しかし周波数を可視領域へと写し替え、色を割り当てることで、電波の宇宙は色鮮やかな天文画像として、わたしたちの目の前に現れます。</p>
-  <p><strong>波紋シンセは、その「音バージョン」です。</strong></p>
-  <p>自然界には、耳に聞こえない「波」があふれています。風に揺れる葉っぱの振動、水面に広がる波紋、寄せては返す海の波。これらはすべて立派な振動＝波ですが、周波数が数Hz程度と低すぎるため、決して音として聞こえることはありません。</p>
-  <p>その聞こえない波を観測し、<span class="pitchnote">ピッチ変換（周波数の写し替え）</span>によって可聴領域へ持ち上げる。すると、いままで沈黙していた自然の波が、音として耳に届きはじめます。電波望遠鏡が不可視の宇宙を目に見せてくれたのと同じやり方で、この楽器は不可聴の波を耳に聴かせてくれます。</p>
-  <figure>
-    <svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="天文学との対比図">
-      <g font-family="sans-serif">
-        <rect x="10" y="10" width="370" height="220" rx="14" fill="#0d1530" stroke="#1d2b52"/>
-        <text x="195" y="40" fill="#8fa3bd" font-size="15" text-anchor="middle">天文学</text>
-        <path d="M60 150 A 40 40 0 0 1 140 150 Z" fill="none" stroke="#4cc9f0" stroke-width="2"/>
-        <line x1="100" y1="150" x2="100" y2="112" stroke="#4cc9f0" stroke-width="2"/>
-        <text x="100" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">電波（不可視）</text>
-        <text x="195" y="130" fill="#ffd166" font-size="22" text-anchor="middle">&#8594;</text>
-        <circle cx="290" cy="120" r="34" fill="none" stroke="#80ed99" stroke-width="2"/>
-        <circle cx="290" cy="120" r="20" fill="none" stroke="#4cc9f0" stroke-width="2"/>
-        <circle cx="290" cy="120" r="8" fill="#ffd166"/>
-        <text x="290" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">カラー天体画像（可視）</text>
-        <rect x="400" y="10" width="370" height="220" rx="14" fill="#0d1530" stroke="#1d2b52"/>
-        <text x="585" y="40" fill="#8fa3bd" font-size="15" text-anchor="middle">波紋シンセ</text>
-        <g stroke="#4cc9f0" fill="none" stroke-width="2">
-          <ellipse cx="490" cy="140" rx="16" ry="5"/>
-          <ellipse cx="490" cy="140" rx="34" ry="11" opacity="0.6"/>
-          <ellipse cx="490" cy="140" rx="52" ry="17" opacity="0.3"/>
+  <header class="hero" id="top">
+    <div class="shell hero-copy">
+      <div class="eyebrow">Physical–computational oscillator</div>
+      <h1>SURFACE<span>/</span><br>SIGNAL</h1>
+      <div class="hero-deck">
+        <p class="hero-jp">自然現象を、<br>物理オシレーターに。</p>
+        <p class="hero-en">Water, sensing and computation form a physical–computational oscillator that generates sound grains.</p>
+      </div>
+    </div>
+    <div class="hero-visual" aria-hidden="true">
+      <svg viewBox="0 0 1440 420" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="wave" x1="0" x2="1">
+            <stop offset="0" stop-color="#79e6d0" stop-opacity="0"/>
+            <stop offset=".35" stop-color="#79e6d0" stop-opacity=".7"/>
+            <stop offset=".72" stop-color="#75a8ff" stop-opacity=".8"/>
+            <stop offset="1" stop-color="#75a8ff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g opacity=".2" stroke="#eceee9" stroke-width=".5">
+          <path d="M0 70H1440M0 140H1440M0 210H1440M0 280H1440M0 350H1440"/>
+          <path d="M180 0V420M360 0V420M540 0V420M720 0V420M900 0V420M1080 0V420M1260 0V420"/>
         </g>
-        <text x="490" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">波紋（不可聴）</text>
-        <text x="585" y="130" fill="#ffd166" font-size="22" text-anchor="middle">&#8594;</text>
-        <text x="680" y="132" fill="#ffd166" font-size="40" text-anchor="middle">&#9834;&#9834;</text>
-        <text x="680" y="180" fill="#8fa3bd" font-size="12" text-anchor="middle">音（可聴）</text>
-      </g>
-    </svg>
-    <figcaption>周波数を写し替えて、感覚の届く領域へ。天文学の手法の「音バージョン」。</figcaption>
-  </figure>
-</section>
+        <path class="scan-line" d="M0 260 C170 260 200 248 330 260 S485 280 590 259 S690 130 755 259 S845 340 930 258 S1090 235 1180 260 S1320 265 1440 258" fill="none" stroke="url(#wave)" stroke-width="2.2"/>
+      </svg>
+    </div>
+  </header>
 
-<section>
-  <h2>自然界は、聞こえない音であふれている<span class="en">WAVES ALL AROUND US</span></h2>
-  <div class="cards">
-    <div class="card"><div class="icon">&#127811;</div><h3>葉っぱの振動</h3><p>風を受けて震える葉。その揺れは数Hz — 立派な振動なのに、音にはなりません。</p></div>
-    <div class="card"><div class="icon">&#128167;</div><h3>水面の波紋</h3><p>一滴の雫が描く同心円。広がり、減衰していく美しい波形が、そこにあります。</p></div>
-    <div class="card"><div class="icon">&#127754;</div><h3>海の波</h3><p>数秒〜十数秒周期のうねり。地球規模の低音は、深すぎて誰の耳にも届きません。</p></div>
-  </div>
-  <p>これらの波は、形こそ音とまったく同じ「振動の記録」です。足りないのは周波数だけ。ならば周波数を持ち上げてやれば、自然が奏でていた音楽が聞こえるはずです。</p>
-</section>
+  <main>
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <div class="eyebrow">01 / Concept</div>
+          <h2>自然を録音するのではない。<br><span class="accent">自然と計算で発振する。</span></h2>
+        </div>
+        <div class="section-copy">
+          <p>マイクが捉えるのは、すでに音になった自然です。SURFACE / SIGNALが観測するのは、その手前にある動き。風に揺れる葉、水面を走る波紋、海のうねりを、変位の時系列として読み取ります。</p>
+          <p>SURFACE / SIGNALは、水面、ToFセンサ、信号処理をひとつの<strong>物理–計算オシレーター（以下、物理オシレーター）</strong>として構成します。水面が振動を生み、ToFが一点の変位を波形へ変え、プロセッサが2秒の観測窓を短い音源グレインへ変換する。自然と計算機が協働して音源を生成する仕組みです。</p>
+        </div>
+      </div>
 
-<section class="astro">
-  <h2>透明な波を、どうやって「観測」するか<span class="en">SENSING THE INVISIBLE WAVE</span></h2>
-  <p class="lead">最初の題材に選んだのは、水面の波紋です。しかし水は透明で、波紋はカメラでも捉えにくい繊細な現象。そこで<strong>ToF（Time of Flight）方式の距離センサ</strong>を水面の上に構え、水面までの距離＝変位を高速に測り続けることで、波紋を「変位の波形」としてそのまま記録します。</p>
-  <p>雫が着水した瞬間を検出すると、その前後2秒間の水面変位がひとつの「グレイン（音の粒）」として切り出されます。これはまさに、波紋という自然現象の生の波形データです。</p>
-  <figure>
-    <img class="pixel" src="stick_screen.png" alt="M5StickS3の画面：実測した波紋の変位波形" width="240" height="135">
-    <figcaption>観測ユニット（M5StickS3）の画面 — 緑の波形は実際の水滴が作った波紋の実測データ。<br>右上の赤丸は記録中、緑丸は発音中を示す。（LVGL Webシミュレータによるレンダリング）</figcaption>
-  </figure>
-  <figure>
-    <svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="システム構成図">
-      <g font-family="sans-serif" font-size="12">
-        <text x="120" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">観測</text>
-        <rect x="30" y="45" width="180" height="52" rx="8" fill="#0d1530" stroke="#1d2b52"/>
-        <text x="120" y="66" fill="#dce6f2" text-anchor="middle">ToF距離センサ</text>
-        <text x="120" y="84" fill="#8fa3bd" text-anchor="middle">GP2Y0E03 / 1kHzポーリング</text>
-        <g stroke="#4cc9f0" fill="none" stroke-width="1.5">
-          <ellipse cx="120" cy="135" rx="14" ry="4"/>
-          <ellipse cx="120" cy="135" rx="30" ry="9" opacity="0.6"/>
-          <ellipse cx="120" cy="135" rx="46" ry="14" opacity="0.3"/>
-        </g>
-        <text x="120" y="170" fill="#8fa3bd" text-anchor="middle">水面の変位を直接測定</text>
-        <text x="390" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">変換</text>
-        <rect x="290" y="45" width="200" height="120" rx="8" fill="#0d1530" stroke="#1d2b52"/>
-        <text x="390" y="68" fill="#dce6f2" text-anchor="middle">M5StickS3</text>
-        <text x="390" y="90" fill="#8fa3bd" text-anchor="middle">着水検出・窓切り出し</text>
-        <text x="390" y="108" fill="#8fa3bd" text-anchor="middle">時間圧縮 + フェーズボコーダ</text>
-        <text x="390" y="126" fill="#ffd166" text-anchor="middle">波の大きさ &#8594; 音の高さ</text>
-        <text x="390" y="148" fill="#8fa3bd" text-anchor="middle">最大4ボイス同時発音</text>
-        <text x="650" y="30" fill="#4cc9f0" font-size="14" text-anchor="middle">演奏</text>
-        <rect x="560" y="45" width="180" height="120" rx="8" fill="#0d1530" stroke="#1d2b52"/>
-        <text x="650" y="68" fill="#dce6f2" text-anchor="middle">M5Stack Tab5</text>
-        <text x="650" y="90" fill="#8fa3bd" text-anchor="middle">シンセサイザ本体</text>
-        <text x="650" y="108" fill="#8fa3bd" text-anchor="middle">ADSR・ディレイ等の</text>
-        <text x="650" y="126" fill="#8fa3bd" text-anchor="middle">エフェクト &#8594; スピーカ</text>
-        <text x="650" y="148" fill="#ffd166" text-anchor="middle">&#9834; 波紋の音</text>
-        <line x1="215" y1="105" x2="285" y2="105" stroke="#4cc9f0" stroke-width="2" marker-end="url(#ar)"/>
-        <line x1="495" y1="105" x2="555" y2="105" stroke="#4cc9f0" stroke-width="2" marker-end="url(#ar)"/>
-        <text x="525" y="92" fill="#8fa3bd" text-anchor="middle" font-size="11">WiFi/UDP</text>
-        <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#4cc9f0"/></marker></defs>
-        <text x="390" y="230" fill="#8fa3bd" text-anchor="middle" font-size="13">雫を落とす &#8594; 約2秒の観測 &#8594; ピッチ変換 &#8594; ワイヤレスで音が鳴る</text>
-      </g>
-    </svg>
-    <figcaption>システム構成：ToF観測 → オンデバイス信号処理 → ワイヤレスシンセ再生</figcaption>
-  </figure>
-</section>
+      <figure class="cosmos-frame">
+        <img src="hercules_a_nasa.jpg" alt="電波銀河ヘラクレスA。不可視の電波ジェットを可視光画像へ重ねた合成画像" width="1920" height="1381">
+        <figcaption class="cosmos-caption">
+          <p>HERCULES A / RADIO GALAXY</p>
+          <p>不可視の電波を色へ写し替えた天体画像。観測不能な領域を人間の感覚へ写像するという方法を、水面と聴覚のあいだに展開する。Credit: NASA, ESA, S. Baum, C. O'Dea, R. Perley, W. Cotton and the Hubble Heritage Team.</p>
+        </figcaption>
+      </figure>
 
-<section>
-  <h2>ピッチ変換 — 自然の波形を、そのまま音楽に<span class="en">PITCH SHIFTING NATURE</span></h2>
-  <p>切り出した波紋の波形は、時間圧縮とフェーズボコーダ処理によって可聴領域へ持ち上げられます。単なる早回しではなく、<strong>音の長さを保ったままピッチだけを移調</strong>できるのがポイントです。</p>
-  <p>さらに、<span class="pitchnote">波紋の大きさが音の高さを決めます</span>。大きな水滴が立てた大波は低めの音に、小さな雫の繊細な波紋は高い音に。振幅が半分になるごとに約1オクターブ上がる急峻なマッピングで、雫の一滴一滴が異なる音程を奏でます。連続で落とせば最大4音の和音になり、ディレイの残響が水面の余韻のように尾を引きます。</p>
-  <figure>
-    <img src="tab5_udp.png" alt="M5Stack Tab5シンセのUDPワイヤレス入力画面" width="1280" height="720">
-    <figcaption>受信側シンセサイザ（M5Stack Tab5）— ソースに「UDP」を選ぶと波紋の音がワイヤレスで鳴る。<br>エンベロープやディレイは鍵盤演奏と同じエフェクトチェーン。（LVGL Webシミュレータによるレンダリング）</figcaption>
-  </figure>
-  <table>
-    <tr><th>観測</th><td>ToF距離センサ GP2Y0E03（赤外線・非接触）を1kHzでポーリング、500Hzで波形記録</td></tr>
-    <tr><th>検出</th><td>エンベロープ比較による着水（オンセット）検出、150msプリロール付き2秒窓</td></tr>
-    <tr><th>変換</th><td>時間圧縮0.2倍 + 1024点フェーズボコーダ（再生時間を保ったまま移調）</td></tr>
-    <tr><th>音高</th><td>波の振幅 &#8594; ピッチ（+12〜+36半音、大きい波ほど低い音）</td></tr>
-    <tr><th>伝送</th><td>WiFi UDP・独自プロトコル（ボイスID付き、最大4ストリーム同時）</td></tr>
-    <tr><th>発音</th><td>M5Stack Tab5シンセ：ボイスごとのADSRエンベロープ + ディレイ等のエフェクト</td></tr>
-  </table>
-</section>
+      <div class="shell transduction-map" aria-label="自然現象から知覚表現または音源グレインへの変換マップ">
+        <div class="map-head" aria-hidden="true">
+          <div>01 / Observed phenomenon</div>
+          <div>02 / Computational mapping</div>
+          <div>03 / Mapped output</div>
+        </div>
 
-<section class="astro">
-  <h2>その先へ<span class="en">WHAT'S NEXT</span></h2>
-  <p>水面の波紋は始まりにすぎません。葉っぱの揺れ、旗のはためき、海のうねり — 変位として観測できる波なら、なんでもこの楽器の「音源」になり得ます。自然界のあらゆる場所で鳴っている聞こえない音楽を、ひとつずつ聴きにいく。それがこのプロジェクトの楽しみです。</p>
-  <div class="links">
-    <a href="https://github.com/airpocket-soundman/M5StickS3_TOF">観測側ファームウェア（M5StickS3_TOF）</a>
-    <a href="https://github.com/airpocket-soundman/Tab5_synth">シンセ側ファームウェア（Tab5_synth）</a>
-  </div>
-</section>
+        <div class="map-row">
+          <div class="map-cell">
+            <div class="map-kicker">REFERENCE / RADIO ASTRONOMY</div>
+            <h3>電磁場の観測</h3>
+            <div class="scientific-plot" aria-hidden="true">
+              <svg viewBox="0 0 360 104" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="fft-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#75a8ff"/>
+                    <stop offset="1" stop-color="#75a8ff" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <g class="plot-grid">
+                  <path d="M24 19H350M24 39H350M24 59H350M24 79H350"/>
+                  <path d="M78 10V84M132 10V84M186 10V84M240 10V84M294 10V84"/>
+                </g>
+                <path class="plot-axis" d="M24 9V84H351"/>
+                <path class="fft-fill" d="M24 82 L31 81 L38 80 L45 79 L52 76 L59 80 L66 77 L73 73 L80 78 L87 75 L94 70 L101 77 L108 74 L115 66 L122 76 L129 73 L136 68 L143 20 L147 70 L154 75 L161 72 L168 67 L175 74 L182 71 L189 59 L196 73 L203 69 L210 64 L217 72 L224 67 L231 34 L237 69 L244 73 L251 70 L258 61 L265 71 L272 67 L279 55 L286 70 L293 66 L300 73 L307 69 L314 63 L321 72 L328 67 L335 75 L342 71 L350 73 L350 84 L24 84Z"/>
+                <path class="fft-line" d="M24 82 L31 81 L38 80 L45 79 L52 76 L59 80 L66 77 L73 73 L80 78 L87 75 L94 70 L101 77 L108 74 L115 66 L122 76 L129 73 L136 68 L143 20 L147 70 L154 75 L161 72 L168 67 L175 74 L182 71 L189 59 L196 73 L203 69 L210 64 L217 72 L224 67 L231 34 L237 69 L244 73 L251 70 L258 61 L265 71 L272 67 L279 55 L286 70 L293 66 L300 73 L307 69 L314 63 L321 72 L328 67 L335 75 L342 71 L350 73"/>
+                <g class="plot-label"><text x="8" y="14">dB</text><text x="24" y="99">0</text><text x="324" y="99">f / Hz</text></g>
+              </svg>
+            </div>
+            <div class="map-range"><strong>RADIO BAND</strong> / 10⁶ — 10¹¹ Hz</div>
+          </div>
+          <div class="map-cell processor">
+            <div>
+              <div class="processor-code">TRANSDUCTION / A</div>
+              <div class="processor-name">スペクトル写像<br>＋ 擬似カラー割り当て</div>
+              <div class="processor-note">観測データ → 可視表現</div>
+            </div>
+          </div>
+          <div class="map-cell">
+            <div class="map-kicker">OUTPUT / VISION</div>
+            <h3>可視領域への写像</h3>
+            <div class="visible-band" aria-hidden="true"></div>
+            <div class="map-range"><strong>VISIBLE FIELD</strong> / spatial image</div>
+          </div>
+        </div>
 
-<footer>
-  波紋シンセ / Ripple Synth — airpocket-soundman<br>
-  M5StickS3 + GP2Y0E03 ToF sensor + M5Stack Tab5
-</footer>
+        <div class="map-row">
+          <div class="map-cell">
+            <div class="map-kicker">SUBJECT / WATER SURFACE</div>
+            <h3>表面変位の観測</h3>
+            <div class="scientific-plot" aria-hidden="true">
+              <svg viewBox="0 0 360 104" preserveAspectRatio="none">
+                <g class="ripple-mesh minor">
+                  <path d="M92 8H268L345 92H15Z"/>
+                  <path d="M180 51L39 59M180 51L73 82M180 51L126 91M180 51L180 92M180 51L234 91M180 51L287 82M180 51L321 59M180 51L287 36M180 51L235 22M180 51L180 8M180 51L125 22M180 51L73 36"/>
+                </g>
+                <g class="ripple-mesh">
+                  <path d="M39 59C39 39 102 24 180 24C258 24 321 39 321 59C321 79 258 92 180 92C102 92 39 79 39 59Z"/>
+                  <path d="M73 56C73 41 121 30 180 30C239 30 287 41 287 56C287 71 239 82 180 82C121 82 73 71 73 56Z"/>
+                  <path d="M108 54C108 43 140 35 180 35C220 35 252 43 252 54C252 65 220 73 180 73C140 73 108 65 108 54Z"/>
+                  <path d="M138 52C138 45 157 40 180 40C203 40 222 45 222 52C222 59 203 64 180 64C157 64 138 59 138 52Z"/>
+                </g>
+                <path class="ripple-ridge" d="M158 51C158 47 168 44 180 44C192 44 202 47 202 51C202 55 192 58 180 58C168 58 158 55 158 51Z"/>
+                <g transform="translate(282 5) rotate(-62)">
+                  <rect class="measurement-sensor" x="-8" y="-4" width="16" height="8" rx="1"/>
+                  <circle cx="-3" cy="0" r="1.3" fill="#ffb36b"/><circle cx="3" cy="0" r="1.3" fill="#ffb36b"/>
+                </g>
+                <path class="measurement-ray" d="M278 10L225 56"/>
+                <circle class="measurement-point" cx="225" cy="56" r="3"/>
+                <path d="M219 56H231M225 51V61" stroke="#ffb36b" stroke-width=".8"/>
+                <g class="plot-label"><text x="15" y="101">X</text><text x="341" y="101">Y</text><text x="286" y="14">ToF</text><text x="233" y="53">単点測距</text></g>
+              </svg>
+            </div>
+            <div class="map-range"><strong>MOTION BAND</strong> / 0.5 — 30 Hz</div>
+          </div>
+          <div class="map-cell processor">
+            <div>
+              <div class="processor-code">TRANSDUCTION / B</div>
+              <div class="processor-name">波形整形<br>＋ 時間軸・ピッチ変換</div>
+              <div class="processor-note">表面変位 → 音源グレイン</div>
+            </div>
+          </div>
+          <div class="map-cell">
+            <div class="map-kicker">OUTPUT / SOURCE GRAIN</div>
+            <h3>音源グレインへの写像</h3>
+            <div class="scientific-plot" aria-hidden="true">
+              <svg viewBox="0 0 360 104" preserveAspectRatio="none">
+                <defs>
+                  <path id="measured-source-wave" d="M18.0 52.0 C18.6 52.0 20.2 52.0 21.3 52.1 C22.4 52.1 23.5 52.1 24.6 52.1 C25.7 52.2 26.9 52.3 28.0 52.2 C29.1 52.1 30.2 52.0 31.3 51.7 C32.4 51.3 33.5 50.8 34.6 50.3 C35.7 49.8 36.8 48.0 37.9 48.7 C39.0 49.4 40.1 57.1 41.2 54.7 C42.3 52.2 43.5 33.3 44.6 34.0 C45.7 34.6 46.8 58.1 47.9 58.5 C49.0 58.9 50.1 38.8 51.2 36.4 C52.3 34.1 53.4 47.7 54.5 44.3 C55.6 40.9 56.7 12.9 57.8 16.0 C58.9 19.1 60.1 61.6 61.2 62.7 C62.3 63.8 63.4 25.9 64.5 22.7 C65.6 19.5 66.7 37.1 67.8 43.3 C68.9 49.6 70.0 58.4 71.1 60.0 C72.2 61.6 73.3 53.7 74.4 52.9 C75.5 52.0 76.7 54.5 77.8 54.9 C78.9 55.3 80.0 54.5 81.1 55.2 C82.2 55.9 83.3 61.6 84.4 59.0 C85.5 56.3 86.6 41.1 87.7 39.3 C88.8 37.5 89.9 45.4 91.0 48.3 C92.1 51.2 93.3 55.1 94.4 56.6 C95.5 58.1 96.6 57.3 97.7 57.2 C98.8 57.1 99.9 55.9 101.0 56.0 C102.1 56.0 103.2 58.0 104.3 57.4 C105.4 56.9 106.5 53.2 107.6 52.5 C108.7 51.8 109.9 53.8 111.0 53.4 C112.1 53.0 113.2 48.7 114.3 49.9 C115.4 51.1 116.5 58.7 117.6 60.4 C118.7 62.0 119.8 61.0 120.9 59.9 C122.0 58.8 123.1 55.4 124.2 53.8 C125.3 52.2 126.5 50.7 127.6 50.5 C128.7 50.3 129.8 52.2 130.9 52.6 C132.0 53.0 133.1 52.7 134.2 52.9 C135.3 53.0 136.4 52.8 137.5 53.7 C138.6 54.6 139.7 58.0 140.8 58.2 C141.9 58.4 143.1 56.6 144.2 55.1 C145.3 53.6 146.4 49.9 147.5 49.2 C148.6 48.6 149.7 50.3 150.8 51.3 C151.9 52.2 153.0 54.3 154.1 54.9 C155.2 55.6 156.3 55.2 157.4 55.2 C158.5 55.1 159.7 55.1 160.8 54.7 C161.9 54.3 163.0 53.5 164.1 52.6 C165.2 51.7 166.3 48.8 167.4 49.3 C168.5 49.8 169.6 54.4 170.7 55.6 C171.8 56.8 172.9 56.5 174.0 56.4 C175.1 56.4 176.3 56.8 177.4 55.2 C178.5 53.6 179.6 47.1 180.7 46.9 C181.8 46.7 182.9 52.4 184.0 53.8 C185.1 55.2 186.2 55.4 187.3 55.3 C188.4 55.2 189.5 53.8 190.6 53.3 C191.7 52.7 192.9 51.7 194.0 51.8 C195.1 51.9 196.2 53.3 197.3 53.7 C198.4 54.1 199.5 54.0 200.6 54.1 C201.7 54.1 202.8 54.5 203.9 54.0 C205.0 53.5 206.1 51.4 207.2 51.1 C208.3 50.8 209.5 51.8 210.6 52.1 C211.7 52.4 212.8 52.7 213.9 53.0 C215.0 53.3 216.1 54.1 217.2 53.9 C218.3 53.7 219.4 52.2 220.5 51.9 C221.6 51.6 222.7 51.6 223.8 51.9 C224.9 52.2 226.1 53.5 227.2 53.5 C228.3 53.5 229.4 52.0 230.5 51.9 C231.6 51.7 232.7 52.5 233.8 52.6 C234.9 52.8 236.0 53.1 237.1 52.8 C238.2 52.5 239.3 51.0 240.4 50.9 C241.5 50.7 242.7 51.5 243.8 51.9 C244.9 52.2 246.0 52.8 247.1 52.8 C248.2 52.8 249.3 51.7 250.4 51.8 C251.5 52.0 252.6 53.4 253.7 53.7 C254.8 54.0 255.9 54.0 257.0 53.6 C258.1 53.2 259.3 52.1 260.4 51.3 C261.5 50.5 262.6 49.1 263.7 48.9 C264.8 48.6 265.9 49.1 267.0 50.0 C268.1 50.8 269.2 53.0 270.3 53.8 C271.4 54.7 272.5 55.3 273.6 55.1 C274.7 54.9 275.9 53.5 277.0 52.8 C278.1 52.0 279.2 51.1 280.3 50.6 C281.4 50.1 282.5 49.5 283.6 49.8 C284.7 50.0 285.8 51.3 286.9 51.9 C288.0 52.6 289.1 53.5 290.2 53.7 C291.3 53.8 292.5 52.9 293.6 52.7 C294.7 52.5 295.8 52.6 296.9 52.6 C298.0 52.5 299.1 52.6 300.2 52.5 C301.3 52.4 302.4 52.1 303.5 52.0 C304.6 51.8 305.7 51.6 306.8 51.6 C307.9 51.5 309.1 51.4 310.2 51.6 C311.3 51.7 312.4 52.0 313.5 52.3 C314.6 52.7 315.7 53.3 316.8 53.5 C317.9 53.6 319.0 53.5 320.1 53.2 C321.2 52.9 322.3 51.8 323.4 51.5 C324.5 51.2 325.7 51.4 326.8 51.5 C327.9 51.7 329.0 52.2 330.1 52.4 C331.2 52.5 332.3 52.4 333.4 52.4 C334.5 52.3 335.6 52.3 336.7 52.3 C337.8 52.2 338.9 52.3 340.0 52.2 C341.1 52.1 342.3 51.9 343.4 51.8 C344.5 51.8 345.6 51.9 346.7 51.9 C347.8 51.9 349.4 52.0 350.0 52.0"/>
+                </defs>
+                <g class="plot-grid"><path d="M18 26H350M18 52H350M18 78H350"/><path d="M73 14V89M128 14V89M183 14V89M238 14V89M293 14V89"/></g>
+                <path class="plot-axis" d="M18 52H351"/>
+                <use href="#measured-source-wave" class="analog-ghost"/>
+                <use href="#measured-source-wave" class="analog-line"/>
+                <g class="plot-label"><text x="7" y="18">A</text><text x="238" y="17">実測 / GRAIN 1</text><text x="331" y="100">t / s</text></g>
+              </svg>
+            </div>
+            <div class="map-range"><strong>PCM GRAIN</strong> / 16 kHz · 16-bit mono</div>
+          </div>
+        </div>
 
+        <div class="map-thesis">
+          <span><strong>PHYSICAL–COMPUTATIONAL OSCILLATOR</strong> / phenomenon + sensing + computation</span>
+          <span>MEASUREMENT ≠ RECORDING ≠ SIMULATION</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <div class="eyebrow">02 / Source</div>
+          <h2>物理オシレーターは、<br>自然の振動から始まる。</h2>
+        </div>
+        <div class="principles">
+          <article class="principle"><span class="num">SOURCE / 01</span><h3>葉の振動</h3><p>風を受けた葉の数Hzの運動。センサと信号処理を接続すれば、物理オシレーターの振動体になる。</p></article>
+          <article class="principle"><span class="num">SOURCE / 02</span><h3>水面の波紋</h3><p>一滴から生まれ、干渉し、減衰する変位。本研究ではこの時間構造から音源グレインを生成する。</p></article>
+          <article class="principle"><span class="num">SOURCE / 03</span><h3>海のうねり</h3><p>数秒から十数秒周期で動く大きな系も、観測と変換を組み合わせれば固有の発振系になり得る。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <div class="eyebrow">03 / Physical oscillator</div>
+          <h2>水面・ToF・プロセッサを、<br>ひとつの発振系に。</h2>
+        </div>
+        <div class="section-copy">
+          <p>振動体である水面、単一点の変位を読むToFセンサ、波形を可聴化するプロセッサ。この三者を統合した系全体を、SURFACE / SIGNALでは「物理–計算オシレーター」と呼びます。</p>
+          <p>雫の着水を検出すると、プリロールを含む2秒間を切り出し、時間圧縮とフェーズボコーダで16kHz・16-bit PCMへ変換します。その短い出力単位が、シンセサイザへ供給する音源グレインです。</p>
+        </div>
+
+        <div class="source-position" aria-label="内蔵オシレーターと物理–計算オシレーターの比較">
+          <div class="source-block">
+            <div class="source-label">CONVENTIONAL SYNTH / GENERATED SOURCE</div>
+            <h3>内蔵オシレーター</h3>
+            <p>SINE / SAW / SQUARE / NOISE</p>
+          </div>
+          <div class="source-arrow" aria-hidden="true">↔</div>
+          <div class="source-block">
+            <div class="source-label">PHYSICAL–COMPUTATIONAL OSCILLATOR</div>
+            <h3>水面＋ToF＋プロセッサ</h3>
+            <p>PHENOMENON → MEASUREMENT → GRAIN</p>
+          </div>
+        </div>
+
+        <div class="process" aria-label="物理オシレーターから発音までの流れ">
+          <article class="process-step">
+            <svg class="signal" viewBox="0 0 280 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 46H280" stroke="#eceee9" stroke-opacity=".1"/><path d="M0 46H62 C80 46 83 13 105 46 S140 69 160 46 S196 34 216 46 S254 48 280 46" fill="none" stroke="#79e6d0" stroke-width="1.6"/></svg>
+            <h3>Oscillate</h3><p>雫が水面を励起し、干渉しながら減衰する物理的な振動を生む。</p>
+          </article>
+          <article class="process-step">
+            <svg class="signal" viewBox="0 0 280 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 46H280" stroke="#eceee9" stroke-opacity=".1"/><path d="M0 46H60 L73 19 L86 61 L101 31 L116 52 L130 40 L145 48 H280" fill="none" stroke="#75a8ff" stroke-width="1.6"/><path d="M54 8V66M151 8V66" stroke="#ffb36b" stroke-opacity=".7" stroke-dasharray="3 4"/></svg>
+            <h3>Sense</h3><p>ToFセンサが水面上の一点を測距し、2秒間の変位波形を取得。</p>
+          </article>
+          <article class="process-step">
+            <svg class="signal" viewBox="0 0 280 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 46H280" stroke="#eceee9" stroke-opacity=".1"/><path d="M12 46 C20 46 22 20 31 46 S43 62 52 46 S65 29 74 46 S88 56 99 46" fill="none" stroke="#75a8ff" stroke-width="1.6"/><path d="M120 24H248M120 35H248M120 46H248M120 57H248" stroke="#79e6d0" stroke-opacity=".55" stroke-dasharray="3 5"/></svg>
+            <h3>Render</h3><p>時間圧縮とピッチ変換により、変位波形からPCMグレインを生成。</p>
+          </article>
+          <article class="process-step">
+            <svg class="signal" viewBox="0 0 280 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 46H280" stroke="#eceee9" stroke-opacity=".1"/><path d="M0 46 C8 46 10 9 20 46 S32 67 41 46 S52 18 61 46 S72 61 81 46 S96 27 105 46 S122 55 133 46 S151 36 162 46 S184 50 197 46 S218 42 234 46 S260 47 280 46" fill="none" stroke="#ffb36b" stroke-width="1.6"/></svg>
+            <h3>Perform</h3><p>UDPでTab5へ送り、ボイス別ADSRとエフェクトを加えて演奏。</p>
+          </article>
+        </div>
+
+        <figure class="device-figure">
+          <img src="stick_screen.png" alt="M5StickS3の画面に表示された水面変位波形" width="240" height="135">
+          <figcaption class="device-copy"><h3>物理オシレーターの観測面。</h3><p>M5StickS3の画面に描かれる緑の線は、実測された水面変位です。赤はグレインの記録中、緑は生成したグレインの発音中。水面、観測、変換が一つの音源系として動作します。</p></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <div class="eyebrow">04 / Signal path</div>
+          <h2>音源グレインを、<br><span class="accent">シンセの信号経路へ。</span></h2>
+        </div>
+        <div class="audio-lab" aria-labelledby="audio-lab-title">
+          <div class="audio-lab-head">
+            <div>
+              <div class="audio-lab-kicker">LIVE DSP / MEASURED GRAIN 1</div>
+              <h3 id="audio-lab-title">物理オシレーターのグレインを聴く</h3>
+            </div>
+            <button class="audio-play" id="grain-play" type="button" aria-pressed="false">▶ 波形を再生</button>
+          </div>
+          <div class="audio-wave">
+            <canvas id="grain-wave" width="1180" height="190" aria-label="物理オシレーターが生成した実測グレインの波形"></canvas>
+            <div class="audio-wave-meta"><span id="grain-render-meta">FIRMWARE RENDER / SPEED 0.2× / AMPLITUDE-MAPPED PITCH</span><span>PCM 16 kHz / 16-bit mono</span></div>
+          </div>
+          <div class="audio-controls" aria-label="音量とディレイの設定">
+            <label class="audio-control">
+              <span class="audio-control-head"><span class="audio-control-name">音量</span><output id="volume-value" for="audio-volume">70%</output></span>
+              <small>MASTER VOLUME</small>
+              <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="0.70">
+            </label>
+            <label class="audio-control">
+              <span class="audio-control-head"><span class="audio-control-name">ディレイ時間</span><output id="delay-time-value" for="delay-time">271 ms</output></span>
+              <small>TIME / 40—700 ms</small>
+              <input id="delay-time" type="range" min="0" max="1" step="0.01" value="0.35">
+            </label>
+            <label class="audio-control">
+              <span class="audio-control-head"><span class="audio-control-name">フィードバック</span><output id="delay-feedback-value" for="delay-feedback">40%</output></span>
+              <small>FEEDBACK</small>
+              <input id="delay-feedback" type="range" min="0" max="1" step="0.01" value="0.40">
+            </label>
+            <label class="audio-control">
+              <span class="audio-control-head"><span class="audio-control-name">ディレイ量</span><output id="delay-mix-value" for="delay-mix">30%</output></span>
+              <small>WET MIX</small>
+              <input id="delay-mix" type="range" min="0" max="1" step="0.01" value="0.30">
+            </label>
+          </div>
+          <p class="audio-lab-note">物理オシレーターが実測波形から生成したグレインを、現ファームと同じ0.2×時間圧縮・振幅依存ピッチでレンダリングしています。これらは固定し、Tab5のストリーム用Delayと音量だけをブラウザー上で操作できます。</p>
+        </div>
+        <dl class="specs">
+          <div class="spec-row"><dt>Observation</dt><dd>GP2Y0E03 / 1kHzポーリング / 500Hz波形記録 / 赤外線・非接触</dd></div>
+          <div class="spec-row"><dt>Detection</dt><dd>エンベロープ比較によるオンセット検出 / 150msプリロール / 2秒キャプチャ</dd></div>
+          <div class="spec-row"><dt>Translation</dt><dd>時間圧縮0.2倍 / 1024点フェーズボコーダ / +12〜+36半音</dd></div>
+          <div class="spec-row"><dt>Transmission</dt><dd>WiFi UDP / ボイスID付き独自プロトコル / 最大4ストリーム</dd></div>
+          <div class="spec-row"><dt>Synthesis</dt><dd>M5Stack Tab5 / ボイス別ADSR・ミックス / フィルター・コーラス・ディレイ・歪み・ビットクラッシャー</dd></div>
+        </dl>
+        <figure class="receiver">
+          <a class="receiver-link" href="https://github.com/airpocket-soundman/Tab5_synth" aria-label="GitHubでTab5_synthリポジトリを開く">
+            <img src="tab5_udp.png" alt="M5Stack Tab5シンセサイザのUDP入力画面" width="1280" height="720">
+          </a>
+          <figcaption>RECEIVER / M5STACK TAB5 — UDP INPUT, PER-VOICE ENVELOPE, MIX AND SHARED EFFECT PROCESSING</figcaption>
+          <div class="receiver-copy">
+            <h3>物理オシレーターを、音源回路へ接続する。</h3>
+            <p>一般的なシンセサイザでは、内蔵オシレーターがサイン波・ノコギリ波・矩形波などを生成します。SURFACE / SIGNALでは、その音源位置へ<strong>物理–計算オシレーターが生成した短いグレイン</strong>を供給します。PCMをUDPで受け取ったTab5は、最大4ボイスを個別にADSR処理してミックスし、フィルター、コーラス、ディレイ、歪み、ビットクラッシャーを適用します。これは自然音の録音や模倣ではなく、物理現象を含む発振系によるデジタル音源です。</p>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="future">
+      <div class="shell">
+        <div class="section-head">
+          <div class="eyebrow">05 / Beyond water</div>
+          <h2>水面は、<br>始まりにすぎない。</h2>
+        </div>
+        <p class="future-copy">葉の揺れ、旗のはためき、海のうねり。変位として観測できる現象なら、センサと信号処理を組み合わせて物理–計算オシレーターを構成できます。自然をデジタル空間へ複製するのではなく、自然と計算機がひとつの発振系を共有する。その系が生むグレインから、まだ存在しない音を立ち上げます。</p>
+        <div class="links">
+          <a href="https://github.com/airpocket-soundman/M5StickS3_TOF">Observer firmware</a>
+          <a href="https://github.com/airpocket-soundman/Tab5_synth">Synthesizer firmware</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell"><span>SURFACE / SIGNAL — AIRPOCKET-SOUNDMAN</span><span>M5STICKS3 + GP2Y0E03 + M5STACK TAB5</span></div>
+  </footer>
+  <script src="grain-player.js"></script>
+  <script src="i18n.js"></script>
 </body>
 </html>
